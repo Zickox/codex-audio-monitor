@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Audio Sessions Widget</title>
+    <style>
+      :root {
+        color: #101010;
+        font-family: "Inter", "SF Pro Text", system-ui, -apple-system, sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: radial-gradient(circle at 0% 0%, #dcefff 0%, #f7fbff 40%, #ffffff 100%);
+        padding: 14px;
+      }
+
+      .panel {
+        border-radius: 14px;
+        border: 1px solid rgba(8, 41, 82, 0.15);
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 8px 28px rgba(28, 63, 102, 0.12);
+        padding: 14px;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .meta {
+        margin: 0;
+        font-size: 0.78rem;
+        color: #3a4a5d;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin: 10px 0 12px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 9px;
+        padding: 8px 10px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button.primary {
+        color: #fff;
+        background: linear-gradient(135deg, #0b67ff 0%, #0054d8 100%);
+      }
+
+      button.secondary {
+        color: #0f2e53;
+        background: #d7e8ff;
+      }
+
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        border-radius: 10px;
+        border: 1px solid rgba(13, 35, 71, 0.08);
+        background: rgba(255, 255, 255, 0.85);
+        padding: 8px 10px;
+      }
+
+      .name {
+        font-size: 0.84rem;
+        font-weight: 650;
+      }
+
+      .bundle {
+        margin-top: 2px;
+        font-size: 0.72rem;
+        color: #506076;
+      }
+
+      .tag {
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 0.66rem;
+        font-weight: 700;
+      }
+
+      .tag.active {
+        background: #d5f8e6;
+        color: #0f6b40;
+      }
+
+      .tag.muted {
+        background: #ffe8cf;
+        color: #885315;
+      }
+
+      .empty {
+        margin-top: 10px;
+        font-size: 0.82rem;
+        color: #5a6b80;
+      }
+
+      .error {
+        margin-top: 10px;
+        font-size: 0.78rem;
+        color: #ad2b2b;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="panel">
+      <div class="header">
+        <h1 class="title">Audio Sessions</h1>
+        <p id="meta" class="meta">0 sessions</p>
+      </div>
+
+      <div class="actions">
+        <button id="refresh" class="primary">Refresh</button>
+        <button id="summarize" class="secondary">Ask summary</button>
+      </div>
+
+      <ul id="sessions"></ul>
+      <p id="empty" class="empty" hidden>No active audio sessions.</p>
+      <p id="error" class="error" hidden></p>
+    </section>
+
+    <script type="module">
+      const metaEl = document.getElementById("meta");
+      const listEl = document.getElementById("sessions");
+      const emptyEl = document.getElementById("empty");
+      const errorEl = document.getElementById("error");
+      const refreshButton = document.getElementById("refresh");
+      const summarizeButton = document.getElementById("summarize");
+
+      let rpcId = 0;
+      const pending = new Map();
+      let currentPayload = {
+        sessions: [],
+        total: 0,
+        mutedCount: 0,
+        generatedAt: new Date().toISOString()
+      };
+
+      const rpcNotify = (method, params) => {
+        window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+      };
+
+      const rpcRequest = (method, params) =>
+        new Promise((resolve, reject) => {
+          const id = ++rpcId;
+          pending.set(id, { resolve, reject });
+          window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+        });
+
+      function setError(message) {
+        if (!message) {
+          errorEl.hidden = true;
+          errorEl.textContent = "";
+          return;
+        }
+
+        errorEl.hidden = false;
+        errorEl.textContent = message;
+      }
+
+      function render(payload) {
+        currentPayload = payload;
+        metaEl.textContent = `${payload.total} sessions · ${payload.mutedCount} muted`;
+        listEl.innerHTML = "";
+
+        if (!payload.sessions.length) {
+          emptyEl.hidden = false;
+          return;
+        }
+
+        emptyEl.hidden = true;
+
+        for (const session of payload.sessions) {
+          const row = document.createElement("li");
+
+          const left = document.createElement("div");
+          const name = document.createElement("div");
+          name.className = "name";
+          name.textContent = session.displayName;
+
+          const bundle = document.createElement("div");
+          bundle.className = "bundle";
+          bundle.textContent = session.bundleID ?? session.id;
+
+          left.appendChild(name);
+          left.appendChild(bundle);
+
+          const right = document.createElement("div");
+          right.style.display = "flex";
+          right.style.gap = "6px";
+          right.style.alignItems = "center";
+
+          const status = document.createElement("span");
+          status.className = `tag ${session.isMuted ? "muted" : "active"}`;
+          status.textContent = session.isMuted ? "Muted" : "Active";
+
+          const action = document.createElement("button");
+          action.className = "secondary";
+          action.textContent = session.isMuted ? "Unmute" : "Mute";
+          action.addEventListener("click", async () => {
+            setError("");
+            action.disabled = true;
+            action.textContent = "Updating…";
+            try {
+              const result = await rpcRequest("tools/call", {
+                name: "set_session_mute",
+                arguments: {
+                  sessionID: session.id,
+                  muted: !session.isMuted
+                }
+              });
+              if (result?.structuredContent) {
+                render(result.structuredContent);
+              }
+            } catch (error) {
+              setError(`Mute update failed: ${error?.message ?? String(error)}`);
+            } finally {
+              action.disabled = false;
+            }
+          });
+
+          right.appendChild(status);
+          right.appendChild(action);
+
+          row.appendChild(left);
+          row.appendChild(right);
+          listEl.appendChild(row);
+        }
+      }
+
+      async function loadData() {
+        setError("");
+        const dataResult = await rpcRequest("tools/call", {
+          name: "list_audio_sessions",
+          arguments: { limit: 20 }
+        });
+        const payload = dataResult?.structuredContent;
+
+        if (!payload) {
+          throw new Error("Missing structuredContent in list_audio_sessions response");
+        }
+
+        const renderResult = await rpcRequest("tools/call", {
+          name: "render_audio_widget",
+          arguments: payload
+        });
+
+        if (!renderResult?.structuredContent) {
+          throw new Error("Missing structuredContent in render_audio_widget response");
+        }
+
+        render(renderResult.structuredContent);
+      }
+
+      window.addEventListener(
+        "message",
+        (event) => {
+          if (event.source !== window.parent) {
+            return;
+          }
+
+          const message = event.data;
+          if (!message || message.jsonrpc !== "2.0") {
+            return;
+          }
+
+          if (typeof message.id === "number") {
+            const entry = pending.get(message.id);
+            if (!entry) {
+              return;
+            }
+
+            pending.delete(message.id);
+            if (message.error) {
+              entry.reject(message.error);
+            } else {
+              entry.resolve(message.result);
+            }
+            return;
+          }
+
+          if (message.method === "ui/notifications/tool-result" && message.params?.structuredContent) {
+            render(message.params.structuredContent);
+          }
+        },
+        { passive: true }
+      );
+
+      refreshButton.addEventListener("click", async () => {
+        refreshButton.disabled = true;
+        refreshButton.textContent = "Refreshing…";
+        try {
+          await loadData();
+        } catch (error) {
+          setError(`Refresh failed: ${error?.message ?? String(error)}`);
+        } finally {
+          refreshButton.disabled = false;
+          refreshButton.textContent = "Refresh";
+        }
+      });
+
+      summarizeButton.addEventListener("click", () => {
+        rpcNotify("ui/message", {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Summarize active sessions and suggest what to mute. Total=${currentPayload.total}, muted=${currentPayload.mutedCount}.`
+            }
+          ]
+        });
+      });
+
+      async function initializeBridge() {
+        const appInfo = { name: "audio-widget", version: "0.1.0" };
+        const appCapabilities = {};
+        const protocolVersion = "2026-01-26";
+
+        await rpcRequest("ui/initialize", {
+          appInfo,
+          appCapabilities,
+          protocolVersion
+        });
+        rpcNotify("ui/notifications/initialized", {});
+      }
+
+      try {
+        await initializeBridge();
+        await loadData();
+      } catch (error) {
+        setError(`Bridge init failed: ${error?.message ?? String(error)}`);
+      }
+    </script>
+  </body>
+</html>
