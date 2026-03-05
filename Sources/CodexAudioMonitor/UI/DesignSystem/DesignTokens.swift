@@ -6,10 +6,10 @@ struct DesignTokens {
     static let chipCornerRadius: CGFloat = 7
 
     static let spacingXS: CGFloat = 4
-    static let spacingS: CGFloat = 9
+    static let spacingS: CGFloat = 8
     static let spacingM: CGFloat = 12
     static let spacingL: CGFloat = 16
-    static let cardPadding: CGFloat = 11
+    static let cardPadding: CGFloat = 10
 
     static let menuWidth: CGFloat = 392
 

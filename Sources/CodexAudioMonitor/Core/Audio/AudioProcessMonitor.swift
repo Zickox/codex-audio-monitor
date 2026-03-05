@@ -113,6 +113,31 @@ public final class AudioProcessMonitor: AudioMonitoringService {
         refresh()
     }
 
+    public func solo(sessionID: String) {
+        guard sessions.contains(where: { $0.id == sessionID }) else {
+            errorMessage = AudioMonitorError.sessionNotFound(sessionID).localizedDescription
+            return
+        }
+
+        mutedSessionIDs = Set(sessions.map(\.id))
+        mutedSessionIDs.remove(sessionID)
+        refresh()
+    }
+
+    public func muteOthers(except sessionID: String) {
+        guard sessions.contains(where: { $0.id == sessionID }) else {
+            errorMessage = AudioMonitorError.sessionNotFound(sessionID).localizedDescription
+            return
+        }
+
+        let otherSessionIDs = sessions
+            .map(\.id)
+            .filter { $0 != sessionID }
+
+        mutedSessionIDs.formUnion(otherSessionIDs)
+        refresh()
+    }
+
     public func setSessionGain(sessionID: String, gain: Float) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else {
             errorMessage = AudioMonitorError.sessionNotFound(sessionID).localizedDescription
@@ -149,6 +174,10 @@ public final class AudioProcessMonitor: AudioMonitoringService {
             }
             applyProcessControlForSession(at: index)
         }
+    }
+
+    public func restoreAllSessionGains() {
+        setAllSessionGains(1)
     }
 
     public func toggleMute(for session: AudioSession) {
@@ -228,7 +257,8 @@ public final class AudioProcessMonitor: AudioMonitoringService {
         sessionGainByID = sessionGainByID.filter { activeIDs.contains($0.key) }
         sessionLastSeenByID = sessionLastSeenByID.filter { activeIDs.contains($0.key) }
 
-        return byID.values
+        return sortSessions(
+            byID.values
             .map { value in
                 let appGain = resolvedGain(for: value.id, bundleID: value.bundleID)
                 return AudioSession(
@@ -243,9 +273,7 @@ public final class AudioProcessMonitor: AudioMonitoringService {
                     lastSeenAt: sessionLastSeenByID[value.id] ?? now
                 )
             }
-            .sorted { lhs, rhs in
-                lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
-            }
+        )
     }
 
     private func reconcileProcessControl(with activeSessions: inout [AudioSession]) throws {
@@ -365,6 +393,26 @@ public final class AudioProcessMonitor: AudioMonitoringService {
 
     private func clampGain(_ value: Float) -> Float {
         min(max(value, 0), 1)
+    }
+
+    private func sortSessions(_ sessions: [AudioSession]) -> [AudioSession] {
+        sessions.sorted { lhs, rhs in
+            if lhs.isMuted != rhs.isMuted {
+                return !lhs.isMuted
+            }
+
+            if lhs.lastSeenAt != rhs.lastSeenAt {
+                return lhs.lastSeenAt > rhs.lastSeenAt
+            }
+
+            let lhsHasCustomGain = lhs.appGain < 0.999
+            let rhsHasCustomGain = rhs.appGain < 0.999
+            if lhsHasCustomGain != rhsHasCustomGain {
+                return lhsHasCustomGain
+            }
+
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+        }
     }
 
     private func applyProcessControlForSession(at index: Int) {

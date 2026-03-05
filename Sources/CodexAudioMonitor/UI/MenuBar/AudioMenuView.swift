@@ -61,12 +61,12 @@ struct AudioMenuView: View {
     private var headerView: some View {
         HStack(alignment: .center, spacing: DesignTokens.spacingS) {
             Image(systemName: hasLiveAudio ? "waveform" : "speaker.slash")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isAnyMuted ? .orange : DesignTokens.brand)
                 .frame(width: 14, height: 14)
 
             Text("Codex Audio Monitor")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
 
@@ -83,7 +83,7 @@ struct AudioMenuView: View {
             )
         }
         .padding(.horizontal, 2)
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
     }
 
     private var tabSelector: some View {
@@ -115,18 +115,26 @@ struct AudioMenuView: View {
     }
 
     private var volumeControlView: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "speaker.fill")
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                Slider(value: outputVolumeBinding, in: 0...1)
+                    .disabled(!monitor.canControlOutputVolume)
+                    .padding(.vertical, 5)
+
+                Text("\(Int(monitor.outputVolume * 100))%")
+                    .font(.caption2.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(monitor.outputDeviceName)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-
-            Slider(value: outputVolumeBinding, in: 0...1)
-                .disabled(!monitor.canControlOutputVolume)
-
-            Text("\(Int(monitor.outputVolume * 100))%")
-                .font(.caption2.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 2)
         .padding(.vertical, 1)
@@ -147,12 +155,23 @@ struct AudioMenuView: View {
 
             sessionFiltersBar
 
+            if isAudioCapturePermissionRequired {
+                audioCapturePermissionBanner
+            }
+
             if !monitor.sessions.isEmpty {
                 HStack {
                     Text("\(filteredSessions.count) visible")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Spacer()
+                    Button("Restore All") {
+                        monitor.restoreAllSessionGains()
+                    }
+                    .controlSize(.small)
+                    .disabled(!hasCustomSessionGain)
+                    .glassActionButtonStyle()
+
                     Button(areAllSessionsMuted ? "Unmute All" : "Mute All") {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             monitor.setAllMuted(!areAllSessionsMuted)
@@ -184,6 +203,7 @@ struct AudioMenuView: View {
                             SessionRowView(
                                 session: session,
                                 isExpanded: expandedSessionID == session.id,
+                                audioCapturePermissionRequired: isAudioCapturePermissionRequired,
                                 onToggleExpanded: {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         expandedSessionID = expandedSessionID == session.id ? nil : session.id
@@ -193,6 +213,16 @@ struct AudioMenuView: View {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     monitor.toggleMute(sessionID: sessionID)
                                 }
+                            } onSolo: { sessionID in
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    monitor.solo(sessionID: sessionID)
+                                }
+                            } onMuteOthers: { sessionID in
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    monitor.muteOthers(except: sessionID)
+                                }
+                            } onResetGain: { sessionID in
+                                monitor.setSessionGain(sessionID: sessionID, gain: 1)
                             } onSetGain: { sessionID, gain in
                                 monitor.setSessionGain(sessionID: sessionID, gain: gain)
                             }
@@ -277,6 +307,32 @@ struct AudioMenuView: View {
             .controlSize(.small)
         }
         .padding(.horizontal, 4)
+    }
+
+    private var audioCapturePermissionBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "waveform.badge.exclamationmark")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+
+            Text("App Gain necesita permiso de captura de audio para atenuar por aplicación.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            Button("Open Settings") {
+                openAudioCaptureSettings()
+            }
+            .controlSize(.mini)
+        }
+        .padding(8)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.orange.opacity(0.25), lineWidth: 1)
+        )
     }
 
     private var menuBackground: some View {
@@ -374,12 +430,20 @@ struct AudioMenuView: View {
         !monitor.sessions.isEmpty && monitor.sessions.allSatisfy(\.isMuted)
     }
 
+    private var hasCustomSessionGain: Bool {
+        monitor.sessions.contains { $0.appGain < 0.999 }
+    }
+
+    private var isAudioCapturePermissionRequired: Bool {
+        monitor.errorMessage?.localizedCaseInsensitiveContains("captura de audio") == true
+    }
+
     private var sessionsListHeight: CGFloat {
-        let rowEstimate: CGFloat = 72
+        let rowEstimate: CGFloat = 78
         let base = max(1, filteredSessions.count)
-        let expandedBonus: CGFloat = expandedSessionID == nil ? 0 : 104
+        let expandedBonus: CGFloat = expandedSessionID == nil ? 0 : 118
         let dynamicHeight = CGFloat(base) * rowEstimate + expandedBonus
-        return min(470, max(140, dynamicHeight))
+        return min(500, max(180, dynamicHeight))
     }
 
     private var outputVolumeBinding: Binding<Double> {
@@ -406,6 +470,13 @@ struct AudioMenuView: View {
         if !stillVisible {
             self.expandedSessionID = nil
         }
+    }
+
+    private func openAudioCaptureSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 }
 

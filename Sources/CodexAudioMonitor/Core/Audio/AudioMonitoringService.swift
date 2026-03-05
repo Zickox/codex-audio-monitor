@@ -16,8 +16,11 @@ protocol AudioMonitoringService: AnyObject {
     func toggleMute(sessionID: String)
     func setMuted(sessionID: String, muted: Bool)
     func setAllMuted(_ muted: Bool)
+    func solo(sessionID: String)
+    func muteOthers(except sessionID: String)
     func setSessionGain(sessionID: String, gain: Float)
     func setAllSessionGains(_ gain: Float)
+    func restoreAllSessionGains()
     func setOutputVolume(_ value: Float)
     func stepOutputVolume(by delta: Float)
 }

@@ -104,6 +104,105 @@ final class AudioProcessMonitorGainTests: XCTestCase {
         }
     }
 
+    func testUnmutedSessionsArePrioritizedOverMutedSessions() {
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(511),
+                pid: 1902,
+                bundleID: "com.zeta.player",
+                isRunningOutput: true
+            ),
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(512),
+                pid: 1903,
+                bundleID: "com.alpha.browser",
+                isRunningOutput: true
+            )
+        ])
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(snapshotProvider: snapshots, backend: backend, store: AppGainStore())
+
+        monitor.refresh()
+        monitor.setMuted(sessionID: "bundle:com.alpha.browser", muted: true)
+
+        XCTAssertEqual(monitor.sessions.map(\.id), [
+            "bundle:com.zeta.player",
+            "bundle:com.alpha.browser"
+        ])
+    }
+
+    func testSoloMutesOtherSessionsAndLeavesTargetActive() {
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(521),
+                pid: 2001,
+                bundleID: "com.spotify.client",
+                isRunningOutput: true
+            ),
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(522),
+                pid: 2002,
+                bundleID: "com.apple.Safari",
+                isRunningOutput: true
+            )
+        ])
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(snapshotProvider: snapshots, backend: backend, store: AppGainStore())
+
+        monitor.refresh()
+        monitor.solo(sessionID: "bundle:com.spotify.client")
+
+        XCTAssertEqual(monitor.sessions.first(where: { $0.id == "bundle:com.spotify.client" })?.isMuted, false)
+        XCTAssertEqual(monitor.sessions.first(where: { $0.id == "bundle:com.apple.Safari" })?.isMuted, true)
+    }
+
+    func testMuteOthersMutesRemainingSessionsOnly() {
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(531),
+                pid: 2201,
+                bundleID: "com.spotify.client",
+                isRunningOutput: true
+            ),
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(532),
+                pid: 2202,
+                bundleID: "com.apple.Safari",
+                isRunningOutput: true
+            )
+        ])
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(snapshotProvider: snapshots, backend: backend, store: AppGainStore())
+
+        monitor.refresh()
+        monitor.muteOthers(except: "bundle:com.apple.Safari")
+
+        XCTAssertEqual(monitor.sessions.first(where: { $0.id == "bundle:com.spotify.client" })?.isMuted, true)
+        XCTAssertEqual(monitor.sessions.first(where: { $0.id == "bundle:com.apple.Safari" })?.isMuted, false)
+    }
+
+    func testRestoreAllSessionGainsResetsRuntimeAndPersistedValues() {
+        let defaults = makeDefaults()
+        let store = AppGainStore(userDefaults: defaults, key: "test.gain.store")
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(541),
+                pid: 2301,
+                bundleID: "com.spotify.client",
+                isRunningOutput: true
+            )
+        ])
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(snapshotProvider: snapshots, backend: backend, store: store)
+
+        monitor.refresh()
+        monitor.setSessionGain(sessionID: "bundle:com.spotify.client", gain: 0.28)
+        monitor.restoreAllSessionGains()
+
+        XCTAssertEqual(monitor.sessions.first?.appGain ?? 0, 1, accuracy: 0.0001)
+        XCTAssertNil(store.gain(for: "com.spotify.client"))
+    }
+
     func testRemovedProcessTriggersBackendRemove() {
         let snapshots = StubSnapshotProvider([
             AudioProcessSnapshot(
