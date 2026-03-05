@@ -1,7 +1,7 @@
 import CoreAudio
 
-protocol AudioMuteBackend: AnyObject {
-    func mute(processObjectID: AudioObjectID) throws
-    func unmute(processObjectID: AudioObjectID) throws
+protocol AudioProcessControlBackend: AnyObject {
+    func apply(processObjectID: AudioObjectID, muted: Bool, gain: Float) throws
+    func remove(processObjectID: AudioObjectID) throws
     func cleanup()
 }

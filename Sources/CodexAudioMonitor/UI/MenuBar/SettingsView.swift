@@ -4,65 +4,48 @@ struct SettingsView: View {
     @Bindable var codex: CodexRuntimeController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.spacingM) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingL) {
             Text("Codex Audio Monitor")
                 .font(.title3.weight(.semibold))
 
-            Text("macOS 15+ glass fallback and native Liquid Glass on macOS 26+.")
+            Text("Menubar app for per-app audio monitoring and mute control.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: DesignTokens.spacingS) {
-                Text("Codex Integration")
-                    .font(.headline)
-
-                VStack(alignment: .leading, spacing: 2) {
+            GroupBox("Codex OAuth") {
+                VStack(alignment: .leading, spacing: DesignTokens.spacingS) {
                     Text("Auth source: local Codex credentials")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
                     Text("Auth status: \(codex.authState.label)")
                         .font(.subheadline)
+
+                    HStack(spacing: DesignTokens.spacingS) {
+                        Button("Sync Auth") {
+                            Task { await codex.refreshAuth() }
+                        }
+
+                        Button("Login with OAuth") {
+                            Task { await codex.connectCodex() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(codex.isBusy)
+                    }
+
+                    Text("El tab Chat usa Codex real (`codex exec`) para interpretar y ejecutar acciones sobre la UI.")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("RPC status: \(codex.appServerState.label)")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
 
-                HStack(spacing: DesignTokens.spacingS) {
-                    Button("Sync Auth") {
-                        Task { await codex.refreshAuth() }
+                    if let message = codex.lastMessage {
+                        Text(message)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
                     }
-
-                    Button("Run Login") {
-                        Task { await codex.connectCodex() }
-                    }
-                    .buttonStyle(.borderedProminent)
                 }
-
-                HStack(spacing: DesignTokens.spacingS) {
-                    Button("Start RPC") {
-                        Task { await codex.startServer() }
-                    }
-                    .disabled(codex.isBusy || codex.appServerState == .running || codex.appServerState == .starting)
-
-                    Button("Stop RPC") {
-                        Task { await codex.stopServer() }
-                    }
-                    .disabled(codex.isBusy || codex.appServerState == .stopped)
-                }
-
-                Text("Comandos en el chat: `mutea todo`, `desmutea <app>`, `volumen 40`, `estado`.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let message = codex.lastMessage {
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(12)
-            .glassPanel(cornerRadius: DesignTokens.rowCornerRadius)
 
             Spacer(minLength: 0)
         }

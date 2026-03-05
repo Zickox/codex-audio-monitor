@@ -108,7 +108,9 @@ final class CodexRuntimeController {
                         id: session.id,
                         displayName: session.displayName,
                         bundleID: session.bundleID,
-                        isMuted: session.isMuted
+                        isMuted: session.isMuted,
+                        appGainPercent: Int(session.appGain * 100),
+                        appGainAvailable: session.isAppGainAvailable
                     )
                 },
                 outputVolumePercent: Int(monitor.outputVolume * 100),
@@ -186,6 +188,28 @@ final class CodexRuntimeController {
                 }
                 monitor.setOutputVolume(Float(percent) / 100)
                 notes.append("Volumen ajustado a \(Int(monitor.outputVolume * 100))%.")
+
+            case .setSessionGain:
+                guard let sessionID = action.sessionID else {
+                    notes.append("No se indicó `sessionID` para ajustar App Gain.")
+                    continue
+                }
+                guard let gainPercent = action.gainPercent else {
+                    notes.append("No se indicó `gainPercent` para ajustar App Gain.")
+                    continue
+                }
+                guard let session = monitor.sessions.first(where: { $0.id == sessionID }) else {
+                    notes.append("No encontré sesión \(sessionID).")
+                    continue
+                }
+                guard session.isAppGainAvailable else {
+                    notes.append("App Gain no está disponible para \(session.displayName) en el formato actual.")
+                    continue
+                }
+
+                let clamped = min(max(gainPercent, 0), 100)
+                monitor.setSessionGain(sessionID: sessionID, gain: Float(clamped) / 100)
+                notes.append("Ajusté \(session.displayName) a \(clamped)%.")
             }
         }
 
@@ -244,6 +268,9 @@ private extension CodexRuntimeController {
     - `desmutea todo`
     - `mutea spotify`
     - `volumen 40`
+    - `spotify 30%`
+    - `baja chrome a 20`
+    - `restaura zoom a 100`
     - `estado`
     - `login codex`
     """

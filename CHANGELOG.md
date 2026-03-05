@@ -6,30 +6,23 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- `CodexAudioBridge` executable with stdio JSON contract (`health`, `list_sessions`, `set_session_mute`).
-- Shared bridge protocol and handlers in `Core/Bridge`.
-- Swift tests for bridge codec and behavior (`BridgeHandlersTests`).
-- Swift tests for Codex OAuth credential parsing (`CodexOAuthCredentialsTests`).
-- Node bridge client with health-check, request timeouts, and restart backoff.
-- Node tests for bridge client and ChatGPT tool contract (`node:test`).
-- CI smoke job for MCP initialize + list/mute tool calls through the real bridge.
-- Native app project `CodexAudioMonitor.xcodeproj` with app and bridge schemes.
+- App-only project shape with a single macOS app scheme (`CodexAudioMonitorApp`).
+- Menubar tabs (`Audio`, `Chat`) with smooth transitions and dynamic height behavior.
+- Codex chat action planner using real `codex exec` + JSON schema output.
 - Regeneration script `scripts/generate_xcodeproj.rb`.
 
 ### Changed
 
-- `chatgpt-app` now reads real audio sessions from `CodexAudioBridge` (no in-memory hardcoded sessions).
 - GitFlow docs updated to `codex/feature|release|hotfix` branch prefixes.
-- Validation runbook/report updated for XcodeBuildMCP + SPM workspace flow.
+- Validation runbook/report updated for app-only Xcode flow.
 - CoreAudio mute backend now activates taps through private aggregate devices + IOProc lifecycle to make per-app mute effective on background audio.
-- Codex auth now uses the same OAuth source model as CodexBar (reads local Codex credentials) and login now runs `codex login` with a resilient runner/timeout.
-- Menu bar UI refreshed to a denser card-based style inspired by CodexBar, with compact sections and improved visual hierarchy.
+- Codex auth now uses local OAuth credentials and login runs `codex login --device-auth` with a resilient runner/timeout.
+- Menu bar UI simplified to a minimal two-tab layout, prioritizing session list and chat.
 - Menu sessions section now includes ConflictMonitor-inspired filter chips with counts (`All`, `Active`, `Muted`) and expandable rows for on-demand detail.
 - Added bulk mute control (`Mute All` / `Unmute All`) via explicit monitor APIs (`setMuted`, `setAllMuted`).
-- Bridge mute command now uses explicit `setMuted` semantics for deterministic `set_session_mute` behavior.
 - Added animated audio-level indicator in the header to reflect active playback.
 - Added system output volume controls (slider + step buttons) backed by CoreAudio output device volume APIs.
-- Added a compact "Codex Chat" panel in the Codex card to control UI actions with natural-language commands (mute/unmute, volume, refresh, status, login/RPC actions).
+- Removed `chatgpt-app`, bridge executable/contract layers, and SPM package layout to reduce architecture overhead.
 
 ## [0.1.0] - 2026-03-03
 

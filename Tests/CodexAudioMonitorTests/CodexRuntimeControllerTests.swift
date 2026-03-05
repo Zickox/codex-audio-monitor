@@ -11,8 +11,8 @@ final class CodexRuntimeControllerTests: XCTestCase {
             CodexActionPlan(
                 assistantMessage: "Aplicando cambios",
                 actions: [
-                    CodexAction(type: .muteAll, sessionID: nil, volumePercent: nil),
-                    CodexAction(type: .setVolume, sessionID: nil, volumePercent: 35)
+                    CodexAction(type: .muteAll, sessionID: nil, volumePercent: nil, gainPercent: nil),
+                    CodexAction(type: .setVolume, sessionID: nil, volumePercent: 35, gainPercent: nil)
                 ]
             ),
             for: "mutea todo"
@@ -34,7 +34,7 @@ final class CodexRuntimeControllerTests: XCTestCase {
         await service.setPlan(
             CodexActionPlan(
                 assistantMessage: "Hola, ¿en qué te ayudo?",
-                actions: [CodexAction(type: .none, sessionID: nil, volumePercent: nil)]
+                actions: [CodexAction(type: .none, sessionID: nil, volumePercent: nil, gainPercent: nil)]
             ),
             for: "hola"
         )
@@ -50,6 +50,38 @@ final class CodexRuntimeControllerTests: XCTestCase {
         XCTAssertEqual(monitor.sessions.map(\.isMuted), initialMuted)
         XCTAssertEqual(monitor.outputVolume, initialVolume)
         XCTAssertTrue(response.localizedCaseInsensitiveContains("hola"))
+    }
+
+    func testHandleChatCommandAppliesSessionGainAction() async {
+        let service = FakeCodexIntegrationService()
+        await service.setAuthState(.loggedIn(provider: "OAuth"))
+        await service.setPlan(
+            CodexActionPlan(
+                assistantMessage: "Ajustando gain",
+                actions: [
+                    CodexAction(
+                        type: .setSessionGain,
+                        sessionID: "bundle:com.spotify.client",
+                        volumePercent: nil,
+                        gainPercent: 30
+                    )
+                ]
+            ),
+            for: "spotify 30%"
+        )
+
+        let monitor = makeMonitor()
+        monitor.refresh()
+        let runtime = CodexRuntimeController(service: service)
+
+        let response = await runtime.handleChatCommand("spotify 30%", monitor: monitor)
+        let spotify = monitor.sessions.first { $0.id == "bundle:com.spotify.client" }
+
+        XCTAssertNotNil(spotify)
+        if let spotify {
+            XCTAssertEqual(spotify.appGain, 0.3, accuracy: 0.001)
+        }
+        XCTAssertTrue(response.contains("Ajusté"))
     }
 
     func testCheckConnectivityStoresReportAndMessage() async {
@@ -93,7 +125,7 @@ final class CodexRuntimeControllerTests: XCTestCase {
             )
         ])
 
-        let muteBackend = RecordingMuteBackend()
+        let processControlBackend = RecordingProcessControlBackend()
         let outputController = StubOutputVolumeController(
             state: AudioOutputVolumeState(
                 volume: 0.6,
@@ -104,7 +136,7 @@ final class CodexRuntimeControllerTests: XCTestCase {
 
         return AudioProcessMonitor(
             snapshotProvider: snapshotProvider,
-            muteBackend: muteBackend,
+            processControlBackend: processControlBackend,
             outputVolumeController: outputController,
             pollInterval: .seconds(5)
         )

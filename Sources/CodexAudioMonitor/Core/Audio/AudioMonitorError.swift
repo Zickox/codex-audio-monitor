@@ -1,11 +1,13 @@
 import CoreAudio
 import Foundation
 
-enum AudioMonitorError: LocalizedError {
+enum AudioMonitorError: LocalizedError, Equatable {
     case unsupportedOS
     case coreAudio(OSStatus)
     case sessionNotFound(String)
     case volumeControlUnavailable
+    case appGainUnavailable
+    case audioCapturePermissionRequired
 
     var errorDescription: String? {
         switch self {
@@ -18,6 +20,10 @@ enum AudioMonitorError: LocalizedError {
             return "No se encontró la sesión de audio: \(sessionID)."
         case .volumeControlUnavailable:
             return "El dispositivo de salida actual no permite cambiar volumen."
+        case .appGainUnavailable:
+            return "App Gain no está disponible con el formato de salida actual."
+        case .audioCapturePermissionRequired:
+            return "App Gain requiere permiso de captura de audio del sistema. Acepta el prompt de macOS para continuar."
         }
     }
 

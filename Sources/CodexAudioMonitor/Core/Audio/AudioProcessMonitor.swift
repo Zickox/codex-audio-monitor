@@ -14,32 +14,37 @@ public final class AudioProcessMonitor: AudioMonitoringService {
     public private(set) var outputDeviceName = "System Output"
 
     private let snapshotProvider: AudioProcessSnapshotProviding
-    private let muteBackend: AudioMuteBackend
+    private let processControlBackend: AudioProcessControlBackend
     private let outputVolumeController: AudioOutputVolumeControlling
+    private let appGainStore: AppGainStore
     private let pollInterval: Duration
 
     private var mutedSessionIDs = Set<String>()
+    private var sessionGainByID: [String: Float] = [:]
     private var sessionLastSeenByID: [String: Date] = [:]
     private var previousProcessObjectIDs = Set<AudioObjectID>()
     private var refreshTask: Task<Void, Never>?
 
     public init(pollInterval: Duration = .seconds(1)) {
         self.snapshotProvider = CoreAudioProcessSnapshotProvider()
-        self.muteBackend = CoreAudioTapMuteBackend()
+        self.processControlBackend = CoreAudioTapProcessControlBackend()
         self.outputVolumeController = CoreAudioOutputVolumeController()
+        self.appGainStore = AppGainStore()
         self.pollInterval = pollInterval
         refreshOutputVolume()
     }
 
     init(
         snapshotProvider: AudioProcessSnapshotProviding = CoreAudioProcessSnapshotProvider(),
-        muteBackend: AudioMuteBackend = CoreAudioTapMuteBackend(),
+        processControlBackend: AudioProcessControlBackend = CoreAudioTapProcessControlBackend(),
         outputVolumeController: AudioOutputVolumeControlling = CoreAudioOutputVolumeController(),
+        appGainStore: AppGainStore = AppGainStore(),
         pollInterval: Duration = .seconds(1)
     ) {
         self.snapshotProvider = snapshotProvider
-        self.muteBackend = muteBackend
+        self.processControlBackend = processControlBackend
         self.outputVolumeController = outputVolumeController
+        self.appGainStore = appGainStore
         self.pollInterval = pollInterval
         refreshOutputVolume()
     }
@@ -55,7 +60,7 @@ public final class AudioProcessMonitor: AudioMonitoringService {
     public func stop() {
         refreshTask?.cancel()
         refreshTask = nil
-        muteBackend.cleanup()
+        processControlBackend.cleanup()
     }
 
     public func refresh() {
@@ -63,11 +68,18 @@ public final class AudioProcessMonitor: AudioMonitoringService {
 
         do {
             let snapshots = try snapshotProvider.snapshots()
-            let activeSessions = buildSessions(from: snapshots)
-            try reconcileMuteState(with: activeSessions)
+            var activeSessions = buildSessions(from: snapshots)
             sessions = activeSessions
             lastRefresh = Date()
-            errorMessage = nil
+
+            do {
+                try reconcileProcessControl(with: &activeSessions)
+                sessions = activeSessions
+                errorMessage = nil
+            } catch {
+                sessions = activeSessions
+                errorMessage = "No se pudo refrescar audio: \(error.localizedDescription)"
+            }
         } catch {
             errorMessage = "No se pudo refrescar audio: \(error.localizedDescription)"
         }
@@ -99,6 +111,44 @@ public final class AudioProcessMonitor: AudioMonitoringService {
             mutedSessionIDs.subtract(sessionIDs)
         }
         refresh()
+    }
+
+    public func setSessionGain(sessionID: String, gain: Float) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else {
+            errorMessage = AudioMonitorError.sessionNotFound(sessionID).localizedDescription
+            return
+        }
+
+        let clamped = clampGain(gain)
+        sessionGainByID[sessionID] = clamped
+        sessions[index].appGain = clamped
+
+        if let bundleID = sessions[index].bundleID {
+            if clamped >= 0.999 {
+                appGainStore.removeGain(for: bundleID)
+            } else {
+                appGainStore.setGain(clamped, for: bundleID)
+            }
+        }
+        
+        applyProcessControlForSession(at: index)
+    }
+
+    public func setAllSessionGains(_ gain: Float) {
+        let clamped = clampGain(gain)
+        for index in sessions.indices {
+            let session = sessions[index]
+            sessionGainByID[session.id] = clamped
+            sessions[index].appGain = clamped
+            if let bundleID = session.bundleID {
+                if clamped >= 0.999 {
+                    appGainStore.removeGain(for: bundleID)
+                } else {
+                    appGainStore.setGain(clamped, for: bundleID)
+                }
+            }
+            applyProcessControlForSession(at: index)
+        }
     }
 
     public func toggleMute(for session: AudioSession) {
@@ -175,18 +225,21 @@ public final class AudioProcessMonitor: AudioMonitoringService {
 
         let activeIDs = Set(byID.keys)
         mutedSessionIDs = mutedSessionIDs.intersection(activeIDs)
-
+        sessionGainByID = sessionGainByID.filter { activeIDs.contains($0.key) }
         sessionLastSeenByID = sessionLastSeenByID.filter { activeIDs.contains($0.key) }
 
         return byID.values
             .map { value in
-                AudioSession(
+                let appGain = resolvedGain(for: value.id, bundleID: value.bundleID)
+                return AudioSession(
                     id: value.id,
                     displayName: value.displayName,
                     bundleID: value.bundleID,
                     pids: value.pids.sorted(),
                     processObjectIDs: value.processObjectIDs.sorted(),
                     isMuted: mutedSessionIDs.contains(value.id),
+                    appGain: appGain,
+                    isAppGainAvailable: true,
                     lastSeenAt: sessionLastSeenByID[value.id] ?? now
                 )
             }
@@ -195,29 +248,81 @@ public final class AudioProcessMonitor: AudioMonitoringService {
             }
     }
 
-    private func reconcileMuteState(with activeSessions: [AudioSession]) throws {
+    private func reconcileProcessControl(with activeSessions: inout [AudioSession]) throws {
         let currentProcessObjectIDs = Set(activeSessions.flatMap(\.processObjectIDs))
         let removedProcessObjectIDs = previousProcessObjectIDs.subtracting(currentProcessObjectIDs)
 
+        var firstError: Error?
+
         for processObjectID in removedProcessObjectIDs {
-            try muteBackend.unmute(processObjectID: processObjectID)
+            do {
+                try processControlBackend.remove(processObjectID: processObjectID)
+            } catch {
+                if firstError == nil {
+                    firstError = error
+                }
+            }
         }
 
-        let mutedProcessObjectIDs = Set(
-            activeSessions
-                .filter { mutedSessionIDs.contains($0.id) }
-                .flatMap(\.processObjectIDs)
+        struct ProcessState {
+            let sessionID: String
+            let isMuted: Bool
+            let gain: Float
+        }
+
+        let desiredStateByProcessObjectID = Dictionary(
+            uniqueKeysWithValues: activeSessions
+                .flatMap { session in
+                    session.processObjectIDs.map { processObjectID in
+                        (processObjectID, ProcessState(sessionID: session.id, isMuted: session.isMuted, gain: session.appGain))
+                    }
+                }
         )
 
-        for processObjectID in currentProcessObjectIDs {
-            if mutedProcessObjectIDs.contains(processObjectID) {
-                try muteBackend.mute(processObjectID: processObjectID)
-            } else {
-                try muteBackend.unmute(processObjectID: processObjectID)
+        for (processObjectID, state) in desiredStateByProcessObjectID {
+            do {
+                try processControlBackend.apply(
+                    processObjectID: processObjectID,
+                    muted: state.isMuted,
+                    gain: state.gain
+                )
+            } catch let error as AudioMonitorError where error == .appGainUnavailable || error == .audioCapturePermissionRequired {
+                if let index = activeSessions.firstIndex(where: { $0.id == state.sessionID }) {
+                    activeSessions[index].isAppGainAvailable = false
+                    activeSessions[index].appGain = 1.0
+                    sessionGainByID[state.sessionID] = 1.0
+                    if let bundleID = activeSessions[index].bundleID {
+                        appGainStore.removeGain(for: bundleID)
+                    }
+                }
+
+                if error == .audioCapturePermissionRequired, firstError == nil {
+                    firstError = error
+                }
+
+                do {
+                    try processControlBackend.apply(
+                        processObjectID: processObjectID,
+                        muted: state.isMuted,
+                        gain: 1.0
+                    )
+                } catch {
+                    if firstError == nil {
+                        firstError = error
+                    }
+                }
+            } catch {
+                if firstError == nil {
+                    firstError = error
+                }
             }
         }
 
         previousProcessObjectIDs = currentProcessObjectIDs
+
+        if let firstError {
+            throw firstError
+        }
     }
 
     private func makeSessionID(bundleID: String?, pid: pid_t) -> String {
@@ -239,5 +344,72 @@ public final class AudioProcessMonitor: AudioMonitoringService {
         }
 
         return "PID \(pid)"
+    }
+
+    private func resolvedGain(for sessionID: String, bundleID: String?) -> Float {
+        if let existing = sessionGainByID[sessionID] {
+            return clampGain(existing)
+        }
+
+        if let bundleID,
+           let persisted = appGainStore.gain(for: bundleID)
+        {
+            let clamped = clampGain(persisted)
+            sessionGainByID[sessionID] = clamped
+            return clamped
+        }
+
+        sessionGainByID[sessionID] = 1
+        return 1
+    }
+
+    private func clampGain(_ value: Float) -> Float {
+        min(max(value, 0), 1)
+    }
+
+    private func applyProcessControlForSession(at index: Int) {
+        guard sessions.indices.contains(index) else { return }
+
+        let session = sessions[index]
+        var firstError: Error?
+
+        for processObjectID in session.processObjectIDs {
+            do {
+                try processControlBackend.apply(
+                    processObjectID: processObjectID,
+                    muted: session.isMuted,
+                    gain: session.appGain
+                )
+            } catch AudioMonitorError.appGainUnavailable {
+                sessions[index].isAppGainAvailable = false
+                sessions[index].appGain = 1.0
+                sessionGainByID[session.id] = 1.0
+                if let bundleID = session.bundleID {
+                    appGainStore.removeGain(for: bundleID)
+                }
+
+                do {
+                    try processControlBackend.apply(
+                        processObjectID: processObjectID,
+                        muted: session.isMuted,
+                        gain: 1.0
+                    )
+                } catch {
+                    if firstError == nil {
+                        firstError = error
+                    }
+                }
+            } catch {
+                if firstError == nil {
+                    firstError = error
+                }
+            }
+        }
+
+        if let firstError {
+            errorMessage = "No se pudo aplicar App Gain: \(firstError.localizedDescription)"
+        } else {
+            errorMessage = nil
+        }
     }
 }

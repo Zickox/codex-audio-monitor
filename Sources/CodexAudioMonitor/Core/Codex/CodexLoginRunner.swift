@@ -15,7 +15,7 @@ enum CodexLoginRunner {
         let output: String
     }
 
-    static func run(timeout: TimeInterval = 120) async -> Result {
+    static func run(timeout: TimeInterval = 120, useDeviceAuth: Bool = true) async -> Result {
         await Task(priority: .userInitiated) {
             let env = ProcessInfo.processInfo.environment
             guard let executable = CodexBinaryLocator.resolveCodexBinary(env: env) else {
@@ -24,7 +24,7 @@ enum CodexLoginRunner {
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = ["login"]
+            process.arguments = useDeviceAuth ? ["login", "--device-auth"] : ["login"]
             process.environment = env
 
             let stdout = Pipe()

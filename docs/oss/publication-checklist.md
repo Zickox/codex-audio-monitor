@@ -11,17 +11,13 @@ Use this checklist before publishing or tagging a public release.
 
 ## Build and test gates
 
-- [ ] `swift test`
 - [ ] `xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -destination 'platform=macOS' build`
-- [ ] `xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioBridge -destination 'platform=macOS' build`
-- [ ] `chatgpt-app`: `npm run check`
-- [ ] `chatgpt-app`: `npm run test`
+- [ ] `xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -configuration Release -destination 'platform=macOS' build`
 
 ## Smoke gates
 
-- [ ] Bridge smoke (`health`, `list_sessions`, `set_session_mute`).
-- [ ] MCP smoke (`initialize`, `list_audio_sessions`, `set_session_mute`).
 - [ ] Menubar launch smoke via `./run-menubar.sh`.
+- [ ] Codex chat smoke (`login`, `mutea todo`, `volumen 40`, `estado`).
 
 ## Security and CI
 

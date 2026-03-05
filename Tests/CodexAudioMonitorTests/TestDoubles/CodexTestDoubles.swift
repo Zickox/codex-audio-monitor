@@ -28,16 +28,22 @@ final class StubSnapshotProvider: AudioProcessSnapshotProviding {
     }
 }
 
-final class RecordingMuteBackend: AudioMuteBackend {
-    private(set) var mutedProcessIDs: [AudioObjectID] = []
-    private(set) var unmutedProcessIDs: [AudioObjectID] = []
-
-    func mute(processObjectID: AudioObjectID) throws {
-        mutedProcessIDs.append(processObjectID)
+final class RecordingProcessControlBackend: AudioProcessControlBackend {
+    struct Call: Equatable {
+        let processObjectID: AudioObjectID
+        let muted: Bool
+        let gain: Float
     }
 
-    func unmute(processObjectID: AudioObjectID) throws {
-        unmutedProcessIDs.append(processObjectID)
+    private(set) var applyCalls: [Call] = []
+    private(set) var removedProcessIDs: [AudioObjectID] = []
+
+    func apply(processObjectID: AudioObjectID, muted: Bool, gain: Float) throws {
+        applyCalls.append(Call(processObjectID: processObjectID, muted: muted, gain: gain))
+    }
+
+    func remove(processObjectID: AudioObjectID) throws {
+        removedProcessIDs.append(processObjectID)
     }
 
     func cleanup() {}

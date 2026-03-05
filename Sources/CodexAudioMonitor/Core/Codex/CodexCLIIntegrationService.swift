@@ -264,6 +264,7 @@ private extension CodexCLIIntegrationService {
                     "required": ["type"],
                     "properties": {
                       "type": {
+                        "type": "string",
                         "const": "none"
                       }
                     }
@@ -274,6 +275,7 @@ private extension CodexCLIIntegrationService {
                     "required": ["type"],
                     "properties": {
                       "type": {
+                        "type": "string",
                         "enum": ["refresh", "status", "mute_all", "unmute_all"]
                       }
                     }
@@ -284,6 +286,7 @@ private extension CodexCLIIntegrationService {
                     "required": ["type", "sessionID"],
                     "properties": {
                       "type": {
+                        "type": "string",
                         "enum": ["mute_session", "unmute_session"]
                       },
                       "sessionID": {
@@ -297,9 +300,29 @@ private extension CodexCLIIntegrationService {
                     "required": ["type", "volumePercent"],
                     "properties": {
                       "type": {
+                        "type": "string",
                         "const": "set_volume"
                       },
                       "volumePercent": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "sessionID", "gainPercent"],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "set_session_gain"
+                      },
+                      "sessionID": {
+                        "type": "string"
+                      },
+                      "gainPercent": {
                         "type": "integer",
                         "minimum": 0,
                         "maximum": 100
@@ -323,6 +346,8 @@ private extension CodexCLIIntegrationService {
         - Use actions only when user intent is clear.
         - For greetings and casual conversation, respond with action type "none".
         - For session-specific actions, use a sessionID that exists in context.
+        - To control app-level volume, use "set_session_gain" with gainPercent (0-100).
+        - Do not use "set_session_gain" when sessionID is unknown or missing.
         - If no UI action is needed, use type "none".
         - Keep assistantMessage concise and actionable.
         - Never invent session IDs.
@@ -363,10 +388,30 @@ private extension CodexCLIIntegrationService {
         let actions = plan.actions.prefix(3).map { action in
             if action.type == .setVolume {
                 let volume = min(max(action.volumePercent ?? 50, 0), 100)
-                return CodexAction(type: .setVolume, sessionID: nil, volumePercent: volume)
+                return CodexAction(
+                    type: .setVolume,
+                    sessionID: nil,
+                    volumePercent: volume,
+                    gainPercent: nil
+                )
             }
 
-            return CodexAction(type: action.type, sessionID: action.sessionID, volumePercent: nil)
+            if action.type == .setSessionGain {
+                let gain = min(max(action.gainPercent ?? 100, 0), 100)
+                return CodexAction(
+                    type: .setSessionGain,
+                    sessionID: action.sessionID,
+                    volumePercent: nil,
+                    gainPercent: gain
+                )
+            }
+
+            return CodexAction(
+                type: action.type,
+                sessionID: action.sessionID,
+                volumePercent: nil,
+                gainPercent: nil
+            )
         }
 
         let message = sanitize(plan.assistantMessage)

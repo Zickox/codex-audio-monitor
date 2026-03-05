@@ -4,8 +4,7 @@ enum CodexIntegrationError: LocalizedError {
     case cliUnavailable
     case commandFailed(command: String, exitCode: Int32, message: String)
     case timeout(command: String)
-    case appServerNotRunning
-    case appServerIOUnavailable
+    case invalidResponse(String)
 
     var errorDescription: String? {
         switch self {
@@ -15,10 +14,8 @@ enum CodexIntegrationError: LocalizedError {
             return "Comando falló: \(command) (\(exitCode)) - \(message)"
         case let .timeout(command):
             return "Timeout ejecutando: \(command)"
-        case .appServerNotRunning:
-            return "El app-server de Codex no está corriendo."
-        case .appServerIOUnavailable:
-            return "No hay canales de IO disponibles para el app-server."
+        case let .invalidResponse(message):
+            return "Respuesta inválida de Codex: \(message)"
         }
     }
 }

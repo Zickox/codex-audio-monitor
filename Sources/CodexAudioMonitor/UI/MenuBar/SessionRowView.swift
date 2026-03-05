@@ -9,6 +9,24 @@ struct SessionRowView: View {
     let isExpanded: Bool
     let onToggleExpanded: () -> Void
     let onToggleMute: (String) -> Void
+    let onSetGain: (String, Float) -> Void
+    @State private var draftGain: Double
+    @State private var isEditingGain = false
+
+    init(
+        session: AudioSession,
+        isExpanded: Bool,
+        onToggleExpanded: @escaping () -> Void,
+        onToggleMute: @escaping (String) -> Void,
+        onSetGain: @escaping (String, Float) -> Void
+    ) {
+        self.session = session
+        self.isExpanded = isExpanded
+        self.onToggleExpanded = onToggleExpanded
+        self.onToggleMute = onToggleMute
+        self.onSetGain = onSetGain
+        _draftGain = State(initialValue: Double(session.appGain))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingS) {
@@ -88,6 +106,37 @@ struct SessionRowView: View {
                     Text("Last seen: \(session.lastSeenAt.formatted(date: .omitted, time: .shortened))")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+
+                    Text("App Gain")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+
+                    if session.isAppGainAvailable {
+                        HStack(spacing: 6) {
+                            Image(systemName: "speaker.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+
+                            Slider(value: appGainBinding, in: 0...1, onEditingChanged: { editing in
+                                isEditingGain = editing
+                            })
+
+                            Text("\(Int(session.appGain * 100))%")
+                                .font(.caption2.weight(.semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+
+                            Button("Reset") {
+                                onSetGain(session.id, 1)
+                            }
+                            .controlSize(.mini)
+                        }
+                    } else {
+                        Text("Gain unavailable on current output format.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -101,6 +150,10 @@ struct SessionRowView: View {
         .padding(DesignTokens.cardPadding)
         .glassPanel(cornerRadius: DesignTokens.rowCornerRadius)
         .animation(.easeInOut(duration: 0.18), value: isExpanded)
+        .onChange(of: session.appGain) {
+            guard !isEditingGain else { return }
+            draftGain = Double(session.appGain)
+        }
     }
 
     private var pidText: String {
@@ -126,5 +179,15 @@ struct SessionRowView: View {
         Text("•")
             .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary.opacity(0.7))
+    }
+
+    private var appGainBinding: Binding<Double> {
+        Binding(
+            get: { draftGain },
+            set: {
+                draftGain = $0
+                onSetGain(session.id, Float($0))
+            }
+        )
     }
 }

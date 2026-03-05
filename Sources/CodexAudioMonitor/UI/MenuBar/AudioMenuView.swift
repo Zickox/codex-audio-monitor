@@ -10,6 +10,7 @@ struct AudioMenuView: View {
     @Bindable var codex: CodexRuntimeController
     @State private var expandedSessionID: String?
     @State private var selectedFilter: SessionFilter = .all
+    @State private var selectedTab: MenuTab = .audio
 
     var body: some View {
         Group {
@@ -23,7 +24,7 @@ struct AudioMenuView: View {
         }
         .padding(.horizontal, DesignTokens.spacingL)
         .padding(.vertical, DesignTokens.spacingM)
-        .frame(width: DesignTokens.menuWidth, height: DesignTokens.menuHeight)
+        .frame(width: DesignTokens.menuWidth)
         .background(menuBackground)
         .onAppear {
             monitor.start()
@@ -36,14 +37,15 @@ struct AudioMenuView: View {
         .onChange(of: monitor.sessions.map(\.id)) {
             collapseExpandedIfFilteredOut()
         }
+        .animation(.easeInOut(duration: 0.22), value: monitor.sessions.count)
+        .animation(.easeInOut(duration: 0.2), value: selectedTab)
     }
 
     private var menuContent: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.spacingXS) {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingS) {
             headerView
-            volumeControlView
-            sessionsView
-            CodexStatusCardView(codex: codex, monitor: monitor)
+            tabSelector
+            tabContent
             footerView
 
             if let errorMessage = monitor.errorMessage {
@@ -51,6 +53,7 @@ struct AudioMenuView: View {
                     .font(.caption2)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
             }
         }
     }
@@ -78,15 +81,37 @@ struct AudioMenuView: View {
                 isActive: hasLiveAudio,
                 intensity: animationIntensity
             )
-
-            StatusChipView(
-                text: isAnyMuted ? "Muted" : "Live",
-                color: isAnyMuted ? .orange : DesignTokens.brand
-            )
         }
         .padding(.horizontal, 2)
         .padding(.vertical, 2)
-        .animation(.snappy(duration: 0.2), value: monitor.sessions.count)
+    }
+
+    private var tabSelector: some View {
+        HStack(spacing: 6) {
+            tabButton(.audio, title: "Audio", icon: "music.note.list")
+            tabButton(.chat, title: "Chat", icon: "bubble.left.and.bubble.right")
+        }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        ZStack {
+            switch selectedTab {
+            case .audio:
+                audioTabView
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            case .chat:
+                CodexStatusCardView(codex: codex, monitor: monitor)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
+    }
+
+    private var audioTabView: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.spacingS) {
+            volumeControlView
+            sessionsView
+        }
     }
 
     private var volumeControlView: some View {
@@ -97,10 +122,6 @@ struct AudioMenuView: View {
 
             Slider(value: outputVolumeBinding, in: 0...1)
                 .disabled(!monitor.canControlOutputVolume)
-
-            Image(systemName: "speaker.wave.3.fill")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
 
             Text("\(Int(monitor.outputVolume * 100))%")
                 .font(.caption2.weight(.semibold))
@@ -133,7 +154,9 @@ struct AudioMenuView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button(areAllSessionsMuted ? "Unmute All" : "Mute All") {
-                        monitor.setAllMuted(!areAllSessionsMuted)
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            monitor.setAllMuted(!areAllSessionsMuted)
+                        }
                     }
                     .controlSize(.small)
                     .glassActionButtonStyle()
@@ -144,14 +167,16 @@ struct AudioMenuView: View {
                 Text("No active audio sessions right now.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .padding(.vertical, 20)
+                    .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity)
             } else if filteredSessions.isEmpty {
                 Text(filteredEmptyStateLabel)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .padding(.vertical, 20)
+                    .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: DesignTokens.spacingS) {
@@ -160,16 +185,23 @@ struct AudioMenuView: View {
                                 session: session,
                                 isExpanded: expandedSessionID == session.id,
                                 onToggleExpanded: {
-                                    expandedSessionID = expandedSessionID == session.id ? nil : session.id
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        expandedSessionID = expandedSessionID == session.id ? nil : session.id
+                                    }
                                 }
                             ) { sessionID in
-                                monitor.toggleMute(sessionID: sessionID)
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    monitor.toggleMute(sessionID: sessionID)
+                                }
+                            } onSetGain: { sessionID, gain in
+                                monitor.setSessionGain(sessionID: sessionID, gain: gain)
                             }
                         }
                     }
                     .padding(.vertical, 2)
                 }
-                .frame(maxHeight: 430)
+                .frame(height: sessionsListHeight)
+                .scrollIndicators(.automatic)
             }
         }
         .padding(DesignTokens.cardPadding)
@@ -217,7 +249,9 @@ struct AudioMenuView: View {
     private var footerView: some View {
         HStack(spacing: DesignTokens.spacingS) {
             Button {
-                monitor.refresh()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    monitor.refresh()
+                }
                 Task { await codex.refreshAuth() }
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
@@ -260,6 +294,28 @@ struct AudioMenuView: View {
             )
             .blendMode(.screen)
         }
+    }
+
+    private func tabButton(_ tab: MenuTab, title: String, icon: String) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedTab = tab
+            }
+        } label: {
+            Label(title, systemImage: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule()
+                        .fill(selectedTab == tab ? DesignTokens.brand.opacity(0.26) : Color.secondary.opacity(0.14))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(selectedTab == tab ? DesignTokens.brand.opacity(0.55) : Color.clear, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private var isAnyMuted: Bool {
@@ -318,6 +374,14 @@ struct AudioMenuView: View {
         !monitor.sessions.isEmpty && monitor.sessions.allSatisfy(\.isMuted)
     }
 
+    private var sessionsListHeight: CGFloat {
+        let rowEstimate: CGFloat = 72
+        let base = max(1, filteredSessions.count)
+        let expandedBonus: CGFloat = expandedSessionID == nil ? 0 : 104
+        let dynamicHeight = CGFloat(base) * rowEstimate + expandedBonus
+        return min(470, max(140, dynamicHeight))
+    }
+
     private var outputVolumeBinding: Binding<Double> {
         Binding(
             get: { Double(monitor.outputVolume) },
@@ -345,6 +409,13 @@ struct AudioMenuView: View {
     }
 }
 
+private enum MenuTab: String, CaseIterable, Identifiable {
+    case audio
+    case chat
+
+    var id: String { rawValue }
+}
+
 private enum SessionFilter: String, CaseIterable, Identifiable {
     case all
     case active
@@ -366,7 +437,7 @@ private enum SessionFilter: String, CaseIterable, Identifiable {
     var color: Color {
         switch self {
         case .all:
-            return .secondary
+            return .white
         case .active:
             return DesignTokens.brand
         case .muted:

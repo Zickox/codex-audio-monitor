@@ -10,7 +10,7 @@ struct CodexStatusCardView: View {
 
     @State private var commandText = ""
     @State private var chatMessages: [CodexChatMessage] = [
-        CodexChatMessage(role: .assistant, text: "Codex está listo. Prueba: `mutea todo`, `desmutea spotify`, `volumen 35`, `estado`.")
+        CodexChatMessage(role: .assistant, text: "Codex está listo. Prueba: `mutea todo`, `spotify 30%`, `volumen 35`, `estado`.")
     ]
 
     var body: some View {

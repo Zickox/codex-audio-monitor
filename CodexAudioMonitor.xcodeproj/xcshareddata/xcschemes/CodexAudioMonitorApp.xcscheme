@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "73144F8EC4AF29E771351796"
+               BlueprintIdentifier = "253985F5F3A6A96FB003C770"
                BuildableName = "CodexAudioMonitor.app"
                BlueprintName = "CodexAudioMonitorApp"
                ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
@@ -28,7 +28,7 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "3FD061D0E4C42640699E28B4"
+               BlueprintIdentifier = "8053F77C3AC536FE44BD61A4"
                BuildableName = "CodexAudioMonitorTests.xctest"
                BlueprintName = "CodexAudioMonitorTests"
                ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
@@ -41,6 +41,15 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "253985F5F3A6A96FB003C770"
+            BuildableName = "CodexAudioMonitor.app"
+            BlueprintName = "CodexAudioMonitorApp"
+            ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
       <EnvironmentVariables>
          <EnvironmentVariable
             key = "CODEX_LIVE_TESTS"
@@ -58,7 +67,7 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "3FD061D0E4C42640699E28B4"
+               BlueprintIdentifier = "8053F77C3AC536FE44BD61A4"
                BuildableName = "CodexAudioMonitorTests.xctest"
                BlueprintName = "CodexAudioMonitorTests"
                ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
@@ -76,6 +85,16 @@
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
+      <BuildableProductRunnable
+         runnableDebuggingMode = "0">
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "253985F5F3A6A96FB003C770"
+            BuildableName = "CodexAudioMonitor.app"
+            BlueprintName = "CodexAudioMonitorApp"
+            ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
+         </BuildableReference>
+      </BuildableProductRunnable>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -83,6 +102,16 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
+      <BuildableProductRunnable
+         runnableDebuggingMode = "0">
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "253985F5F3A6A96FB003C770"
+            BuildableName = "CodexAudioMonitor.app"
+            BlueprintName = "CodexAudioMonitorApp"
+            ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
+         </BuildableReference>
+      </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

@@ -21,15 +21,15 @@
 Use these prefixes in PR history:
 
 - `feat(audio): ...`
-- `feat(chatgpt-app): ...`
+- `feat(codex): ...`
 - `test(...): ...`
 - `ci(...): ...`
 - `docs(...): ...`
 
 ## Recommended delivery sequence
 
-1. `codex/feature/audio-bridge`
-2. `codex/feature/chatgpt-real-backend`
+1. `codex/feature/audio-core`
+2. `codex/feature/codex-chat`
 3. `codex/feature/quality-gates`
 4. `codex/feature/gitflow-hardening`
 

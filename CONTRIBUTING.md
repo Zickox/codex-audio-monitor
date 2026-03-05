@@ -23,8 +23,7 @@ Use Conventional Commits, for example:
 Run before opening a PR:
 
 ```bash
-swift build
-swift test
+xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -destination 'platform=macOS' build
 ```
 
 ## Pull requests

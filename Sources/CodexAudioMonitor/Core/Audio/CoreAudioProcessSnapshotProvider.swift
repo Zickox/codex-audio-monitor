@@ -4,12 +4,13 @@ import Foundation
 struct CoreAudioProcessSnapshotProvider: AudioProcessSnapshotProviding {
     func snapshots() throws -> [AudioProcessSnapshot] {
         let processObjectIDs = try getAudioProcessObjectList()
+        let currentPID = ProcessInfo.processInfo.processIdentifier
 
         return processObjectIDs.compactMap { processObjectID in
             guard let pid = getPIDProperty(
                 objectID: processObjectID,
                 selector: kAudioProcessPropertyPID
-            ) else {
+            ), pid != currentPID else {
                 return nil
             }
 

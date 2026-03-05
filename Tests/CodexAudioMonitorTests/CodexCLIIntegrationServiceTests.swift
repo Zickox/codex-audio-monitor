@@ -23,16 +23,35 @@ final class CodexCLIIntegrationServiceTests: XCTestCase {
         let resolved = CodexBinaryLocator.resolveCodexBinary(
             env: ["PATH": tempDir.path],
             fileManager: .default,
+            preferredExecutablePaths: [],
             allowShellLookup: false
         )
 
         XCTAssertEqual(resolved, executablePath)
     }
 
+    func testBinaryLocatorPrefersBundledCodexAppBinaryOverPATHWrapper() throws {
+        let appDir = try makeTemporaryDirectory()
+        let pathDir = try makeTemporaryDirectory()
+        let bundledBinary = try makeExecutable(named: "codex-app", in: appDir)
+        let pathBinary = try makeExecutable(named: "codex", in: pathDir)
+
+        let resolved = CodexBinaryLocator.resolveCodexBinary(
+            env: ["PATH": pathDir.path],
+            fileManager: .default,
+            preferredExecutablePaths: [bundledBinary],
+            allowShellLookup: false
+        )
+
+        XCTAssertEqual(resolved, bundledBinary)
+        XCTAssertNotEqual(resolved, pathBinary)
+    }
+
     func testBinaryLocatorReturnsNilWithoutHitsWhenShellLookupDisabled() {
         let resolved = CodexBinaryLocator.resolveCodexBinary(
             env: ["PATH": "/tmp/non-existent-codex-path"],
             fileManager: .default,
+            preferredExecutablePaths: [],
             allowShellLookup: false,
             allowDefaultFallbackPaths: false
         )
@@ -85,6 +104,57 @@ final class CodexCLIIntegrationServiceTests: XCTestCase {
         XCTAssertEqual(plan.actions.first?.type, .setVolume)
         XCTAssertEqual(plan.actions.first?.volumePercent, 100)
         XCTAssertNil(plan.actions.first?.sessionID)
+        XCTAssertNil(plan.actions.first?.gainPercent)
+    }
+
+    func testGenerateActionPlanSupportsSessionGainAction() async throws {
+        let service = CodexCLIIntegrationService(
+            commandExecutor: StubCodexCommandExecutor { _, arguments, _ in
+                guard let outputFile = Self.argumentValue(after: "--output-last-message", in: arguments) else {
+                    XCTFail("Missing --output-last-message argument")
+                    return ProcessResult(stdout: "", stderr: "", exitCode: 1)
+                }
+
+                let payload = """
+                {
+                  "assistantMessage": "bajando spotify",
+                  "actions": [
+                    {
+                      "type": "set_session_gain",
+                      "sessionID": "bundle:com.spotify.client",
+                      "gainPercent": 250
+                    }
+                  ]
+                }
+                """
+                try payload.write(toFile: outputFile, atomically: true, encoding: .utf8)
+                return ProcessResult(stdout: "", stderr: "", exitCode: 0)
+            },
+            binaryResolver: { "/usr/local/bin/codex" },
+            credentialsLoader: {
+                CodexOAuthCredentials(
+                    accessToken: "token",
+                    refreshToken: "refresh",
+                    idToken: nil,
+                    accountID: nil,
+                    lastRefresh: Date()
+                )
+            }
+        )
+
+        let plan = try await service.generateActionPlan(
+            message: "spotify 30%",
+            context: CodexChatContext(
+                sessions: [],
+                outputVolumePercent: 50,
+                outputDeviceName: "System Output"
+            )
+        )
+
+        XCTAssertEqual(plan.actions.first?.type, .setSessionGain)
+        XCTAssertEqual(plan.actions.first?.sessionID, "bundle:com.spotify.client")
+        XCTAssertEqual(plan.actions.first?.gainPercent, 100)
+        XCTAssertNil(plan.actions.first?.volumePercent)
     }
 
     func testRunConnectivityChecksReturnsConnectedWhenProbesSucceed() async throws {

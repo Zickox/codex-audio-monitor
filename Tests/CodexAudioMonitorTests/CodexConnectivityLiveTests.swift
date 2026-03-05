@@ -66,13 +66,57 @@ final class CodexConnectivityLiveTests: XCTestCase {
 
         let hasDestructiveActions = plan.actions.contains { action in
             switch action.type {
-            case .muteAll, .unmuteAll, .muteSession, .unmuteSession, .setVolume:
+            case .muteAll, .unmuteAll, .muteSession, .unmuteSession, .setVolume, .setSessionGain:
                 return true
             case .none, .refresh, .status:
                 return false
             }
         }
         XCTAssertFalse(hasDestructiveActions)
+    }
+
+    func testLiveSessionGainRequestReturnsStructuredSessionAction() async throws {
+        let mode = liveMode()
+        guard mode.enabled else {
+            throw XCTSkip("Set CODEX_LIVE_TESTS=1 to run live Codex tests")
+        }
+
+        let service = CodexCLIIntegrationService()
+        let report = await service.runConnectivityChecks()
+        guard report.isConnected else {
+            if mode.required {
+                XCTFail("Live tests required but connectivity check failed: \(report.errorMessage ?? "unknown error")")
+            } else {
+                throw XCTSkip("Skipping live session gain test due to failed connectivity check")
+            }
+            return
+        }
+
+        let plan = try await service.generateActionPlan(
+            message: "spotify 30%",
+            context: CodexChatContext(
+                sessions: [
+                    CodexSessionContext(
+                        id: "bundle:com.spotify.client",
+                        displayName: "Spotify",
+                        bundleID: "com.spotify.client",
+                        isMuted: false
+                    )
+                ],
+                outputVolumePercent: 60,
+                outputDeviceName: "System Output"
+            )
+        )
+
+        let gainActions = plan.actions.filter { $0.type == .setSessionGain }
+        XCTAssertFalse(gainActions.isEmpty)
+        XCTAssertEqual(gainActions.first?.sessionID, "bundle:com.spotify.client")
+        if let gain = gainActions.first?.gainPercent {
+            XCTAssertGreaterThanOrEqual(gain, 0)
+            XCTAssertLessThanOrEqual(gain, 100)
+        } else {
+            XCTFail("set_session_gain action should include gainPercent")
+        }
     }
 
     private func liveMode() -> (enabled: Bool, required: Bool) {

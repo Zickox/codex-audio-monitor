@@ -1,7 +1,6 @@
 .DS_Store
 /.build
 /Packages
-/chatgpt-app/node_modules
 xcuserdata/
 DerivedData/
 .swiftpm/configuration/registries.json

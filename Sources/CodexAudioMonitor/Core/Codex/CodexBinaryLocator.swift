@@ -4,6 +4,7 @@ enum CodexBinaryLocator {
     static func resolveCodexBinary(
         env: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default,
+        preferredExecutablePaths: [String] = defaultPreferredExecutablePaths,
         allowShellLookup: Bool = true,
         allowDefaultFallbackPaths: Bool = true
     ) -> String? {
@@ -12,6 +13,10 @@ enum CodexBinaryLocator {
            fileManager.isExecutableFile(atPath: override)
         {
             return override
+        }
+
+        if let preferred = preferredExecutablePaths.first(where: { fileManager.isExecutableFile(atPath: $0) }) {
+            return preferred
         }
 
         if let path = env["PATH"],
@@ -95,4 +100,8 @@ enum CodexBinaryLocator {
 
         return output
     }
+
+    private static let defaultPreferredExecutablePaths = [
+        "/Applications/Codex.app/Contents/Resources/codex"
+    ]
 }

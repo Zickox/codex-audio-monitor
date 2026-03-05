@@ -77,8 +77,8 @@ app_target.build_configurations.each do |config|
   config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.zickox.codexaudiomonitor'
   config.build_settings['SWIFT_VERSION'] = '6.0'
   config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '15.0'
-  config.build_settings['GENERATE_INFOPLIST_FILE'] = 'YES'
-  config.build_settings['INFOPLIST_KEY_LSUIElement'] = 'YES'
+  config.build_settings['GENERATE_INFOPLIST_FILE'] = 'NO'
+  config.build_settings['INFOPLIST_FILE'] = 'Sources/CodexAudioMonitor/App/Info.plist'
   config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
   config.build_settings['CURRENT_PROJECT_VERSION'] = '1'
   config.build_settings['MARKETING_VERSION'] = '0.2.0'
@@ -104,6 +104,7 @@ add_sources(project, test_target, collect_files(TEST_GLOB_PATTERNS))
 
 scheme = Xcodeproj::XCScheme.new
 scheme.configure_with_targets(app_target, test_target)
+scheme.set_launch_target(app_target)
 test_env = scheme.test_action.environment_variables
 test_env.assign_variable(
   :key => 'CODEX_LIVE_TESTS',
