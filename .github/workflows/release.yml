@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -15,43 +15,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: chatgpt-app/package-lock.json
-
-      - name: Swift tests (pre-release)
-        run: swift test
-
-      - name: ChatGPT app checks (pre-release)
-        working-directory: chatgpt-app
-        run: |
-          npm ci
-          npm run check
-          npm run test
-
       - name: Validate Xcode app scheme (Release)
-        run: xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -configuration Release -destination 'platform=macOS' build
-
-      - name: Validate Xcode bridge scheme (Release)
-        run: xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioBridge -configuration Release -destination 'platform=macOS' build
-
-      - name: Build release
-        run: swift build -c release
-
-      - name: Package artifact
         run: |
-          BIN_PATH=$(find .build -type f -name CodexAudioMonitor | grep -E '/release/' | head -n 1)
-          if [ -z "$BIN_PATH" ]; then
-            echo "Release binary not found"
+          xcodebuild \
+            -project CodexAudioMonitor.xcodeproj \
+            -scheme CodexAudioMonitorApp \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath .DerivedData \
+            build
+
+      - name: Validate unit tests before packaging
+        run: |
+          xcodebuild \
+            -project CodexAudioMonitor.xcodeproj \
+            -scheme CodexAudioMonitorApp \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            test
+
+      - name: Package unsigned app bundle
+        run: |
+          set -euo pipefail
+          APP_PATH=".DerivedData/Build/Products/Release/CodexAudioMonitor.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Release app bundle not found at $APP_PATH"
             exit 1
           fi
+
           mkdir -p dist
-          cp "$BIN_PATH" dist/CodexAudioMonitor
-          chmod +x dist/CodexAudioMonitor
-          tar -czf dist/CodexAudioMonitor-macos-unsigned.tar.gz -C dist CodexAudioMonitor
+          cp -R "$APP_PATH" dist/CodexAudioMonitor.app
+          tar -czf dist/CodexAudioMonitor-macos-unsigned.tar.gz -C dist CodexAudioMonitor.app
           shasum -a 256 dist/CodexAudioMonitor-macos-unsigned.tar.gz > dist/CodexAudioMonitor-macos-unsigned.tar.gz.sha256
 
       - name: Upload workflow artifacts

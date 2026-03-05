@@ -1,41 +1,49 @@
 # Codex Audio Monitor
 
-Small macOS menu bar app to detect apps producing audio and mute/unmute them per app.
+Minimal macOS menu bar app to detect apps producing audio and mute/unmute them per app.
 
 ## Requirements
 
 - macOS 15+
 - Xcode 26+
 - Swift 6+
-- Node 24+ (only for `chatgpt-app`)
+- Codex CLI (`codex`) only if you want the optional chat tab with real OAuth
 
 ## Run
 
 ```bash
-# 1) Test core package
-swift test
-
-# 2) Build native macOS app scheme
+# 1) Build native macOS app scheme
 xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -destination 'platform=macOS' build
 
-# 3) Launch menubar app (canonical local launcher)
+# 2) Launch menubar app
 ./run-menubar.sh
+```
+
+## Test
+
+```bash
+# Unit/integration tests (live Codex checks remain opt-in)
+xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -destination 'platform=macOS' test
+
+# Optional live Codex checks
+echo "1" > /tmp/codex-live-tests
+xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -destination 'platform=macOS' test -only-testing:CodexAudioMonitorTests/CodexConnectivityLiveTests
+rm -f /tmp/codex-live-tests /tmp/codex-live-tests-required
 ```
 
 ## Architecture
 
-- `Sources/CodexAudioMonitor/Core/Audio`: process detection, mute backend, output volume control.
-- `Sources/CodexAudioMonitor/UI`: menu bar UI, compact list, chat card, glass styling strategy.
-- `Sources/CodexAudioMonitor/Core/Codex`: optional Codex auth/app-server integration.
-- `Sources/CodexAudioMonitor/Core/Bridge`: stdio bridge protocol + handlers.
-- `Sources/CodexAudioBridge`: executable bridge entrypoint.
-- `chatgpt-app/`: MCP server + widget that talks to the real bridge backend.
+- Single macOS app project (`CodexAudioMonitor.xcodeproj`).
+- `Sources/CodexAudioMonitor/Core/Audio`: process detection, per-app mute backend, output volume control.
+- `Sources/CodexAudioMonitor/Core/Codex`: optional Codex OAuth + real `codex exec` action planning.
+- `Sources/CodexAudioMonitor/UI`: menubar UI with 2 tabs (`Audio`, `Chat`) and glass styling.
 
 ## Optional Codex integration
 
-Codex support is optional. The audio monitor works without Codex login.
+Codex support is optional. The audio monitor works without login.
 
-When enabled, the app uses local Codex credentials (managed by `codex login`) and can control runtime features through the embedded chat commands.
+When enabled, the chat tab uses real Codex credentials (managed by `codex login --device-auth`) and executes actions through `codex exec`.
+The chat tab also includes a built-in diagnostic panel (`Check connection`) that runs ping + structured probe checks and reports connection state/latency.
 
 ## Advanced docs
 

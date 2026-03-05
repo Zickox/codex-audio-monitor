@@ -10,21 +10,18 @@ PROJECT_PATH = ROOT.join('CodexAudioMonitor.xcodeproj')
 
 APP_TARGET_NAME = 'CodexAudioMonitorApp'
 APP_PRODUCT_NAME = 'CodexAudioMonitor'
-BRIDGE_TARGET_NAME = 'CodexAudioBridge'
+TEST_TARGET_NAME = 'CodexAudioMonitorTests'
 
 APP_GLOB_PATTERNS = [
   'Sources/CodexAudioMonitor/App/**/*.swift',
   'Sources/CodexAudioMonitor/Infrastructure/**/*.swift',
   'Sources/CodexAudioMonitor/UI/**/*.swift',
   'Sources/CodexAudioMonitor/Core/Audio/**/*.swift',
-  'Sources/CodexAudioMonitor/Core/Codex/**/*.swift',
-  'Sources/CodexAudioMonitor/Core/Bridge/**/*.swift'
+  'Sources/CodexAudioMonitor/Core/Codex/**/*.swift'
 ].freeze
 
-BRIDGE_GLOB_PATTERNS = [
-  'Sources/CodexAudioMonitor/Core/Audio/**/*.swift',
-  'Sources/CodexAudioMonitor/Core/Bridge/**/*.swift',
-  'Sources/CodexAudioBridge/**/*.swift'
+TEST_GLOB_PATTERNS = [
+  'Tests/CodexAudioMonitorTests/**/*.swift'
 ].freeze
 
 def collect_files(patterns)
@@ -74,7 +71,6 @@ project.root_object.attributes['LastSwiftUpdateCheck'] = '2600'
 project.root_object.attributes['LastUpgradeCheck'] = '2600'
 
 app_target = project.new_target(:application, APP_TARGET_NAME, :osx, '15.0')
-bridge_target = project.new_target(:command_line_tool, BRIDGE_TARGET_NAME, :osx, '15.0')
 
 app_target.build_configurations.each do |config|
   config.build_settings['PRODUCT_NAME'] = APP_PRODUCT_NAME
@@ -89,16 +85,38 @@ app_target.build_configurations.each do |config|
   config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'YES'
 end
 
-bridge_target.build_configurations.each do |config|
+add_sources(project, app_target, collect_files(APP_GLOB_PATTERNS))
+
+test_target = project.new_target(:unit_test_bundle, TEST_TARGET_NAME, :osx, '15.0')
+test_target.add_dependency(app_target)
+
+test_target.build_configurations.each do |config|
   config.build_settings['SWIFT_VERSION'] = '6.0'
   config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '15.0'
-  config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-  config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
-  config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'YES'
+  config.build_settings['GENERATE_INFOPLIST_FILE'] = 'YES'
+  config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.zickox.codexaudiomonitor.tests'
+  config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
+  config.build_settings['TEST_HOST'] = '$(BUILT_PRODUCTS_DIR)/CodexAudioMonitor.app/Contents/MacOS/CodexAudioMonitor'
+  config.build_settings['BUNDLE_LOADER'] = '$(TEST_HOST)'
 end
 
-add_sources(project, app_target, collect_files(APP_GLOB_PATTERNS))
-add_sources(project, bridge_target, collect_files(BRIDGE_GLOB_PATTERNS))
+add_sources(project, test_target, collect_files(TEST_GLOB_PATTERNS))
+
+scheme = Xcodeproj::XCScheme.new
+scheme.configure_with_targets(app_target, test_target)
+test_env = scheme.test_action.environment_variables
+test_env.assign_variable(
+  :key => 'CODEX_LIVE_TESTS',
+  :value => '$(CODEX_LIVE_TESTS)',
+  :enabled => true
+)
+test_env.assign_variable(
+  :key => 'CODEX_LIVE_TESTS_REQUIRED',
+  :value => '$(CODEX_LIVE_TESTS_REQUIRED)',
+  :enabled => true
+)
+scheme.test_action.environment_variables = test_env
+scheme.save_as(PROJECT_PATH, APP_TARGET_NAME, true)
 
 project.save
 puts "Generated #{PROJECT_PATH}"

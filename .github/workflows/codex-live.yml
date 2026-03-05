@@ -1,0 +1,50 @@
+name: Codex Live Checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      require_live_success:
+        description: "Fail workflow when Codex live connectivity is unavailable"
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  codex-live-tests:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable live test markers
+        run: |
+          echo "1" > /tmp/codex-live-tests
+          if [[ "${{ github.event.inputs.require_live_success || 'false' }}" == "true" ]]; then
+            echo "1" > /tmp/codex-live-tests-required
+          fi
+
+      - name: Run Codex live XCTest suite
+        run: |
+          xcodebuild \
+            -project CodexAudioMonitor.xcodeproj \
+            -scheme CodexAudioMonitorApp \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -resultBundlePath .artifacts/codex-live-tests.xcresult \
+            test \
+            -only-testing:CodexAudioMonitorTests/CodexConnectivityLiveTests
+
+      - name: Cleanup markers
+        if: always()
+        run: |
+          rm -f /tmp/codex-live-tests
+          rm -f /tmp/codex-live-tests-required
+
+      - name: Upload live test result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-audio-monitor-live-tests
+          path: .artifacts/codex-live-tests.xcresult

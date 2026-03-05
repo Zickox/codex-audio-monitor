@@ -1,6 +1,6 @@
 import Foundation
 
-enum CodexAuthState: Equatable {
+enum CodexAuthState: Equatable, Sendable {
     case checking
     case loggedOut
     case loggedIn(provider: String)
@@ -16,29 +16,6 @@ enum CodexAuthState: Equatable {
             return "Logged in (\(provider))"
         case let .error(message):
             return "Error: \(message)"
-        }
-    }
-}
-
-enum CodexAppServerState: Equatable {
-    case stopped
-    case starting
-    case running
-    case restarting(attempt: Int)
-    case failed(String)
-
-    var label: String {
-        switch self {
-        case .stopped:
-            return "Stopped"
-        case .starting:
-            return "Starting"
-        case .running:
-            return "Running"
-        case let .restarting(attempt):
-            return "Restarting (\(attempt))"
-        case let .failed(message):
-            return "Failed: \(message)"
         }
     }
 }

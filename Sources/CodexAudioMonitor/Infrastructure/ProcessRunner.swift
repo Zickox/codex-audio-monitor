@@ -1,31 +1,25 @@
 import Foundation
 
-struct ProcessResult {
+struct ProcessResult: Sendable {
     let stdout: String
     let stderr: String
     let exitCode: Int32
 }
 
 enum ProcessRunner {
-    static func runCodexCommand(
-        _ arguments: [String],
-        timeout: Duration
-    ) async throws -> ProcessResult {
-        try await run(
-            executable: "/usr/bin/env",
-            arguments: ["codex"] + arguments,
-            timeout: timeout
-        )
-    }
-
     static func run(
         executable: String,
         arguments: [String],
-        timeout: Duration
+        timeout: Duration,
+        environment: [String: String]? = nil
     ) async throws -> ProcessResult {
         try await withThrowingTaskGroup(of: ProcessResult.self) { group in
             group.addTask {
-                try await runWithoutTimeout(executable: executable, arguments: arguments)
+                try await runWithoutTimeout(
+                    executable: executable,
+                    arguments: arguments,
+                    environment: environment
+                )
             }
 
             group.addTask {
@@ -43,7 +37,8 @@ enum ProcessRunner {
 
     private static func runWithoutTimeout(
         executable: String,
-        arguments: [String]
+        arguments: [String],
+        environment: [String: String]? = nil
     ) async throws -> ProcessResult {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -53,6 +48,9 @@ enum ProcessRunner {
 
                 process.executableURL = URL(fileURLWithPath: executable)
                 process.arguments = arguments
+                if let environment {
+                    process.environment = environment
+                }
                 process.standardOutput = stdoutPipe
                 process.standardError = stderrPipe
 

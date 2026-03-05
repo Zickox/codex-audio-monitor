@@ -3,7 +3,9 @@ import Foundation
 enum CodexBinaryLocator {
     static func resolveCodexBinary(
         env: [String: String] = ProcessInfo.processInfo.environment,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        allowShellLookup: Bool = true,
+        allowDefaultFallbackPaths: Bool = true
     ) -> String? {
         if let override = env["CODEX_CLI_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !override.isEmpty,
@@ -18,8 +20,14 @@ enum CodexBinaryLocator {
             return hit
         }
 
-        if let shellHit = commandV(tool: "codex", env: env, fileManager: fileManager) {
+        if allowShellLookup,
+           let shellHit = commandV(tool: "codex", env: env, fileManager: fileManager)
+        {
             return shellHit
+        }
+
+        guard allowDefaultFallbackPaths else {
+            return nil
         }
 
         let fallbacks = [

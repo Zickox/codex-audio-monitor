@@ -1,0 +1,112 @@
+import CoreAudio
+import XCTest
+@testable import CodexAudioMonitor
+
+@MainActor
+final class CodexRuntimeControllerTests: XCTestCase {
+    func testHandleChatCommandAppliesMuteAllAndVolumeActions() async {
+        let service = FakeCodexIntegrationService()
+        await service.setAuthState(.loggedIn(provider: "OAuth"))
+        await service.setPlan(
+            CodexActionPlan(
+                assistantMessage: "Aplicando cambios",
+                actions: [
+                    CodexAction(type: .muteAll, sessionID: nil, volumePercent: nil),
+                    CodexAction(type: .setVolume, sessionID: nil, volumePercent: 35)
+                ]
+            ),
+            for: "mutea todo"
+        )
+
+        let monitor = makeMonitor()
+        let runtime = CodexRuntimeController(service: service)
+
+        let response = await runtime.handleChatCommand("mutea todo", monitor: monitor)
+
+        XCTAssertTrue(monitor.sessions.allSatisfy(\.isMuted))
+        XCTAssertEqual(Int(monitor.outputVolume * 100), 35)
+        XCTAssertTrue(response.contains("Volumen ajustado"))
+    }
+
+    func testHolaCommandDoesNotApplyDestructiveActions() async {
+        let service = FakeCodexIntegrationService()
+        await service.setAuthState(.loggedIn(provider: "OAuth"))
+        await service.setPlan(
+            CodexActionPlan(
+                assistantMessage: "Hola, ¿en qué te ayudo?",
+                actions: [CodexAction(type: .none, sessionID: nil, volumePercent: nil)]
+            ),
+            for: "hola"
+        )
+
+        let monitor = makeMonitor()
+        monitor.refresh()
+        let initialMuted = monitor.sessions.map(\.isMuted)
+        let initialVolume = monitor.outputVolume
+
+        let runtime = CodexRuntimeController(service: service)
+        let response = await runtime.handleChatCommand("hola", monitor: monitor)
+
+        XCTAssertEqual(monitor.sessions.map(\.isMuted), initialMuted)
+        XCTAssertEqual(monitor.outputVolume, initialVolume)
+        XCTAssertTrue(response.localizedCaseInsensitiveContains("hola"))
+    }
+
+    func testCheckConnectivityStoresReportAndMessage() async {
+        let service = FakeCodexIntegrationService()
+        await service.setAuthState(.loggedIn(provider: "OAuth"))
+        await service.setConnectivityReport(
+            CodexConnectivityReport(
+                binaryFound: true,
+                authState: .loggedIn(provider: "OAuth"),
+                pingOK: true,
+                structuredProbeOK: true,
+                roundTripMs: 88,
+                assistantPreview: "ok",
+                errorMessage: nil,
+                checkedAt: Date()
+            )
+        )
+
+        let runtime = CodexRuntimeController(service: service)
+        await runtime.checkConnectivity()
+
+        XCTAssertNotNil(runtime.connectivityReport)
+        XCTAssertEqual(runtime.authState, .loggedIn(provider: "OAuth"))
+        XCTAssertEqual(runtime.connectivityReport?.roundTripMs, 88)
+        XCTAssertEqual(runtime.lastMessage, "Codex conectado (88 ms).")
+    }
+
+    private func makeMonitor() -> AudioProcessMonitor {
+        let snapshotProvider = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(101),
+                pid: 1201,
+                bundleID: "com.spotify.client",
+                isRunningOutput: true
+            ),
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(102),
+                pid: 1202,
+                bundleID: "com.apple.Safari",
+                isRunningOutput: true
+            )
+        ])
+
+        let muteBackend = RecordingMuteBackend()
+        let outputController = StubOutputVolumeController(
+            state: AudioOutputVolumeState(
+                volume: 0.6,
+                canSetVolume: true,
+                deviceName: "Test Device"
+            )
+        )
+
+        return AudioProcessMonitor(
+            snapshotProvider: snapshotProvider,
+            muteBackend: muteBackend,
+            outputVolumeController: outputController,
+            pollInterval: .seconds(5)
+        )
+    }
+}

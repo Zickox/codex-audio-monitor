@@ -29,123 +29,39 @@ jobs:
             exit 1
           fi
 
-  swift-build-test:
+  macos-build:
     runs-on: macos-15
     needs: [docs-hygiene]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Swift version
-        run: swift --version
+      - name: Xcode build (Debug)
+        run: xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -configuration Debug -destination 'platform=macOS' build
 
-      - name: Build (Debug)
-        run: swift build
+      - name: Xcode build (Release)
+        run: xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -configuration Release -destination 'platform=macOS' build
 
-      - name: Test
-        run: swift test
-
-      - name: Build Xcode app scheme
-        run: xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -destination 'platform=macOS' build
-
-      - name: Build Xcode bridge scheme
-        run: xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioBridge -destination 'platform=macOS' build
-
-  chatgpt-app-node-tests:
+  macos-unit-tests:
     runs-on: macos-15
     needs: [docs-hygiene]
-    defaults:
-      run:
-        working-directory: chatgpt-app
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: chatgpt-app/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Static check
-        run: npm run check
-
-      - name: Node tests
-        run: npm run test
-
-  smoke-bridge-mcp:
-    runs-on: macos-15
-    needs: [swift-build-test, chatgpt-app-node-tests]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: chatgpt-app/package-lock.json
-
-      - name: Build bridge binary
-        run: swift build
-
-      - name: Install chatgpt-app deps
-        working-directory: chatgpt-app
-        run: npm ci
-
-      - name: Smoke MCP list/mute via bridge
+      - name: Xcode unit tests (live tests remain opt-in)
         run: |
-          set -euo pipefail
+          xcodebuild \
+            -project CodexAudioMonitor.xcodeproj \
+            -scheme CodexAudioMonitorApp \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -resultBundlePath .artifacts/unit-tests.xcresult \
+            test
 
-          export AUDIO_BRIDGE_BIN="$GITHUB_WORKSPACE/.build/debug/CodexAudioBridge"
-
-          cd chatgpt-app
-          node server/index.mjs > ../smoke-mcp.log 2>&1 &
-          SERVER_PID=$!
-
-          cleanup() {
-            kill "$SERVER_PID" >/dev/null 2>&1 || true
-            wait "$SERVER_PID" >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-
-          sleep 3
-
-          INIT=$(curl -sS --max-time 20 -X POST http://localhost:8787/mcp \
-            -H 'content-type: application/json' \
-            -H 'Accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":"init-1","method":"initialize","params":{"protocolVersion":"2026-01-26","capabilities":{},"clientInfo":{"name":"ci-smoke","version":"0.1.0"}}}')
-
-          echo "$INIT" > ../smoke-init.json
-          echo "$INIT" | grep -q '"jsonrpc":"2.0"'
-
-          LIST=$(curl -sS --max-time 20 -X POST http://localhost:8787/mcp \
-            -H 'content-type: application/json' \
-            -H 'Accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":"call-1","method":"tools/call","params":{"name":"list_audio_sessions","arguments":{"limit":5}}}')
-
-          echo "$LIST" > ../smoke-list.json
-          echo "$LIST" | grep -q '"structuredContent"'
-
-          MUTE=$(curl -sS --max-time 20 -X POST http://localhost:8787/mcp \
-            -H 'content-type: application/json' \
-            -H 'Accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":"call-2","method":"tools/call","params":{"name":"set_session_mute","arguments":{"sessionID":"bundle:missing","muted":true}}}')
-
-          echo "$MUTE" > ../smoke-mute.json
-          echo "$MUTE" | grep -q '"changed"'
-
-      - name: Upload smoke artifacts
+      - name: Upload unit test result bundle
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-mcp-artifacts
-          path: |
-            smoke-mcp.log
-            smoke-init.json
-            smoke-list.json
-            smoke-mute.json
+          name: codex-audio-monitor-unit-tests
+          path: .artifacts/unit-tests.xcresult
