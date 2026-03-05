@@ -9,6 +9,7 @@ struct CodexStatusCardView: View {
     @Bindable var monitor: AudioProcessMonitor
 
     @State private var commandText = ""
+    @State private var showDiagnosticsDetails = false
     @State private var chatMessages: [CodexChatMessage] = [
         CodexChatMessage(role: .assistant, text: "Codex está listo. Prueba: `mutea todo`, `spotify 30%`, `volumen 35`, `estado`.")
     ]
@@ -47,6 +48,11 @@ struct CodexStatusCardView: View {
 
             Spacer()
 
+            StatusChipView(
+                text: diagnosticsTitle,
+                color: diagnosticsColor
+            )
+
             Button("Login") {
                 Task { await codex.connectCodex() }
             }
@@ -73,9 +79,20 @@ struct CodexStatusCardView: View {
                 }
                 .controlSize(.mini)
                 .disabled(codex.isCheckingConnection)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        showDiagnosticsDetails.toggle()
+                    }
+                } label: {
+                    Image(systemName: showDiagnosticsDetails ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
 
-            if let report = codex.connectivityReport {
+            if showDiagnosticsDetails, let report = codex.connectivityReport {
                 HStack(spacing: 10) {
                     Text("Ping: \(report.pingOK ? "OK" : "Fail")")
                     Text("Structured: \(report.structuredProbeOK ? "OK" : "Fail")")
@@ -112,6 +129,8 @@ struct CodexStatusCardView: View {
 
     private var chatPanel: some View {
         VStack(alignment: .leading, spacing: 6) {
+            quickActionsRow
+
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(chatMessages.suffix(12))) { message in
@@ -141,6 +160,27 @@ struct CodexStatusCardView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var quickActionsRow: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(codex.recommendedQuickActions(for: monitor)) { action in
+                    Button {
+                        runQuickAction(action)
+                    } label: {
+                        Label(action.title, systemImage: action.systemImage)
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(.white.opacity(0.08), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(codex.isBusy)
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
     }
 
     @ViewBuilder
@@ -223,6 +263,15 @@ struct CodexStatusCardView: View {
 
         Task {
             let response = await codex.handleChatCommand(command, monitor: monitor)
+            appendMessage(.assistant, response)
+        }
+    }
+
+    private func runQuickAction(_ action: CodexQuickAction) {
+        appendMessage(.user, action.prompt)
+
+        Task {
+            let response = await codex.runQuickAction(action, monitor: monitor)
             appendMessage(.assistant, response)
         }
     }

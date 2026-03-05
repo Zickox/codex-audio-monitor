@@ -109,6 +109,44 @@ final class CodexRuntimeControllerTests: XCTestCase {
         XCTAssertEqual(runtime.lastMessage, "Codex conectado (88 ms).")
     }
 
+    func testRecommendedQuickActionsExposeCoreCommands() async {
+        let service = FakeCodexIntegrationService()
+        let runtime = CodexRuntimeController(service: service)
+        let monitor = makeMonitor()
+        monitor.refresh()
+
+        let actions = runtime.recommendedQuickActions(for: monitor)
+
+        XCTAssertTrue(actions.contains(where: { $0.prompt == "mutea todo" }))
+        XCTAssertTrue(actions.contains(where: { $0.prompt == "restaura gains" }))
+        XCTAssertTrue(actions.contains(where: { $0.prompt == "estado" }))
+        XCTAssertTrue(actions.contains(where: { $0.prompt.contains("30%") }))
+    }
+
+    func testRestoreAllShortcutDoesNotCallCodexService() async {
+        let service = FakeCodexIntegrationService()
+        await service.setAuthState(.loggedIn(provider: "OAuth"))
+
+        let monitor = makeMonitor()
+        monitor.refresh()
+        monitor.setSessionGain(sessionID: "bundle:com.spotify.client", gain: 0.25)
+
+        let runtime = CodexRuntimeController(service: service)
+        let response = await runtime.runQuickAction(
+            CodexQuickAction(
+                title: "Restore all",
+                prompt: "restaura gains",
+                systemImage: "arrow.uturn.backward.circle"
+            ),
+            monitor: monitor
+        )
+        let receivedMessages = await service.allReceivedMessages()
+
+        XCTAssertEqual(monitor.sessions.first(where: { $0.id == "bundle:com.spotify.client" })?.appGain ?? 0, 1, accuracy: 0.001)
+        XCTAssertEqual(receivedMessages, [])
+        XCTAssertEqual(response, "Restauré todas las apps a 100%.")
+    }
+
     private func makeMonitor() -> AudioProcessMonitor {
         let snapshotProvider = StubSnapshotProvider([
             AudioProcessSnapshot(

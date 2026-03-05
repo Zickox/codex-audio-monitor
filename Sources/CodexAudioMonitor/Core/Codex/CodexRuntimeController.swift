@@ -70,6 +70,65 @@ final class CodexRuntimeController {
         }
     }
 
+    func recommendedQuickActions(for monitor: AudioProcessMonitor) -> [CodexQuickAction] {
+        var actions: [CodexQuickAction] = [
+            CodexQuickAction(
+                title: "Mute all",
+                prompt: "mutea todo",
+                systemImage: "speaker.slash.fill"
+            ),
+            CodexQuickAction(
+                title: "Restore all",
+                prompt: "restaura gains",
+                systemImage: "arrow.uturn.backward.circle"
+            ),
+            CodexQuickAction(
+                title: "Status",
+                prompt: "estado",
+                systemImage: "waveform.path.ecg"
+            )
+        ]
+
+        if let primarySession = monitor.sessions.first(where: { !$0.isMuted }) ?? monitor.sessions.first {
+            actions.append(
+                CodexQuickAction(
+                    title: "Baja \(primarySession.displayName)",
+                    prompt: "\(primarySession.displayName) 30%",
+                    systemImage: "dial.low"
+                )
+            )
+        }
+
+        return actions
+    }
+
+    func runQuickAction(_ action: CodexQuickAction, monitor: AudioProcessMonitor) async -> String {
+        let normalizedPrompt = normalize(action.prompt)
+
+        if containsAny(normalizedPrompt, Self.restoreKeywords) {
+            monitor.restoreAllSessionGains()
+            let message = "Restauré todas las apps a 100%."
+            lastMessage = message
+            return message
+        }
+
+        if containsAny(normalizedPrompt, Self.statusKeywords) {
+            monitor.refresh()
+            let message = statusMessage(for: monitor)
+            lastMessage = message
+            return message
+        }
+
+        if containsAny(normalizedPrompt, Self.muteAllKeywords) {
+            monitor.setAllMuted(true)
+            let message = "Muteé todas las sesiones."
+            lastMessage = message
+            return message
+        }
+
+        return await handleChatCommand(action.prompt, monitor: monitor)
+    }
+
     func handleChatCommand(_ rawCommand: String, monitor: AudioProcessMonitor) async -> String {
         let command = rawCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty else {
@@ -261,6 +320,9 @@ final class CodexRuntimeController {
 private extension CodexRuntimeController {
     static let helpKeywords = ["ayuda", "help", "comandos"]
     static let loginKeywords = ["login", "inicia sesion", "iniciar sesion", "conectar codex"]
+    static let restoreKeywords = ["restaura gains", "restore all", "restaura todo", "restaura audio", "reset gains"]
+    static let statusKeywords = ["estado", "status"]
+    static let muteAllKeywords = ["mutea todo", "mute all", "silencia todo"]
 
     static let helpMessage = """
     Comandos sugeridos:
@@ -274,4 +336,18 @@ private extension CodexRuntimeController {
     - `estado`
     - `login codex`
     """
+}
+
+struct CodexQuickAction: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let prompt: String
+    let systemImage: String
+
+    init(title: String, prompt: String, systemImage: String) {
+        self.id = prompt
+        self.title = title
+        self.prompt = prompt
+        self.systemImage = systemImage
+    }
 }
