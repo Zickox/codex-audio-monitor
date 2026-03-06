@@ -9,22 +9,21 @@ struct CodexStatusCardView: View {
     @Bindable var monitor: AudioProcessMonitor
 
     @State private var commandText = ""
-    @State private var showDiagnosticsDetails = false
     @State private var chatMessages: [CodexChatMessage] = [
-        CodexChatMessage(role: .assistant, text: "Codex está listo. Prueba: `mutea todo`, `spotify 30%`, `volumen 35`, `estado`.")
+        CodexChatMessage(role: .assistant, text: "Codex está listo.")
     ]
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingS) {
             header
-            diagnosticsPanel
+            quickActionsRow
             chatPanel
 
-            if let lastMessage = codex.lastMessage {
-                Text(lastMessage)
+            if let error = codex.lastUserFacingError {
+                Text(error)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .lineLimit(2)
                     .transition(.opacity)
             }
         }
@@ -33,15 +32,16 @@ struct CodexStatusCardView: View {
         }
         .padding(DesignTokens.cardPadding)
         .glassPanel(cornerRadius: DesignTokens.rowCornerRadius)
-        .animation(.easeInOut(duration: 0.2), value: codex.connectivityReport?.checkedAt)
+        .animation(.easeInOut(duration: 0.18), value: codex.isBusy)
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Codex Chat")
+                Text("Codex")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                Text("Auth: \(codex.authState.label)")
+
+                Text(codex.authState.label)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -49,116 +49,26 @@ struct CodexStatusCardView: View {
             Spacer()
 
             StatusChipView(
-                text: diagnosticsTitle,
-                color: diagnosticsColor
+                text: codex.connectionStatusLabel,
+                color: statusColor,
+                appearance: codex.connectionStatusLabel == "Connected" ? .subtle : .emphasis
             )
 
-            Button("Login") {
-                Task { await codex.connectCodex() }
+            Button(codex.isCheckingConnection ? "Checking..." : "Check") {
+                Task { await codex.checkConnectivity() }
             }
-            .controlSize(.small)
-            .disabled(codex.isBusy)
-        }
-    }
+            .font(.caption.weight(.semibold))
+            .glassSecondaryButtonStyle()
+            .disabled(codex.isCheckingConnection || codex.isBusy)
 
-    private var diagnosticsPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: diagnosticsIcon)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(diagnosticsColor)
-
-                Text(diagnosticsTitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                Button(codex.isCheckingConnection ? "Checking..." : "Check connection") {
-                    Task { await codex.checkConnectivity() }
+            if !isCodexConnected {
+                Button("Login") {
+                    Task { await codex.connectCodex() }
                 }
-                .controlSize(.mini)
-                .disabled(codex.isCheckingConnection)
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        showDiagnosticsDetails.toggle()
-                    }
-                } label: {
-                    Image(systemName: showDiagnosticsDetails ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .font(.caption.weight(.semibold))
+                .glassUtilityButtonStyle()
+                .disabled(codex.isBusy)
             }
-
-            if showDiagnosticsDetails, let report = codex.connectivityReport {
-                HStack(spacing: 10) {
-                    Text("Ping: \(report.pingOK ? "OK" : "Fail")")
-                    Text("Structured: \(report.structuredProbeOK ? "OK" : "Fail")")
-                    if let roundTrip = report.roundTripMs {
-                        Text("Latency: \(roundTrip) ms")
-                    }
-                }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-                if let preview = report.assistantPreview, !preview.isEmpty {
-                    Text("Preview: \(preview)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                Text("Checked: \(report.checkedAt.formatted(date: .omitted, time: .standard))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Ejecuta una verificación para validar conexión, auth y respuesta de Codex.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(8)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(diagnosticsColor.opacity(0.25), lineWidth: 1)
-        )
-    }
-
-    private var chatPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            quickActionsRow
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(chatMessages.suffix(12))) { message in
-                        chatBubble(message)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(minHeight: 120, maxHeight: chatPanelHeight)
-            .animation(.easeInOut(duration: 0.2), value: chatMessages.count)
-
-            HStack(spacing: 6) {
-                TextField("Escribe un comando...", text: $commandText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        submitCommand()
-                    }
-
-                Button("Send") {
-                    submitCommand()
-                }
-                .controlSize(.small)
-                .disabled(commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || codex.isBusy)
-            }
-
-            Text("Codex ejecuta acciones reales sobre la interfaz de audio.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -171,16 +81,66 @@ struct CodexStatusCardView: View {
                     } label: {
                         Label(action.title, systemImage: action.systemImage)
                             .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(.white.opacity(0.08), in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .glassSecondaryButtonStyle()
                     .disabled(codex.isBusy)
                 }
             }
         }
         .scrollIndicators(.hidden)
+    }
+
+    private var chatPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(chatMessages.suffix(10))) { message in
+                        chatBubble(message)
+                    }
+
+                    if codex.isBusy {
+                        thinkingBubble
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 110, maxHeight: chatPanelHeight)
+
+            HStack(spacing: 6) {
+                TextField("Escribe un comando...", text: $commandText)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(codex.isBusy)
+                    .onSubmit {
+                        submitCommand()
+                    }
+
+                Button(codex.isBusy ? "Thinking..." : "Send") {
+                    submitCommand()
+                }
+                .font(.caption.weight(.semibold))
+                .glassPrimaryButtonStyle()
+                .disabled(commandText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || codex.isBusy)
+            }
+        }
+    }
+
+    private var thinkingBubble: some View {
+        HStack {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+
+                Text("Codex está pensando...")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            Spacer(minLength: 20)
+        }
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     @ViewBuilder
@@ -204,87 +164,63 @@ struct CodexStatusCardView: View {
         }
     }
 
-    private var diagnosticsIcon: String {
-        guard let report = codex.connectivityReport else {
-            return "bolt.horizontal.circle"
-        }
-        if report.isConnected {
-            return "checkmark.seal.fill"
-        }
-        if case .loggedOut = report.authState {
-            return "person.crop.circle.badge.exclamationmark"
-        }
-        return "exclamationmark.triangle.fill"
-    }
-
-    private var diagnosticsColor: Color {
-        guard let report = codex.connectivityReport else {
-            return .secondary
-        }
-        if report.isConnected {
+    private var statusColor: Color {
+        switch codex.connectionStatusLabel {
+        case "Connected", "Ready":
             return .green
-        }
-        if case .loggedOut = report.authState {
+        case "Auth required":
             return .orange
+        case "Checking", "Not checked":
+            return .secondary
+        default:
+            return .red
         }
-        return .red
     }
 
-    private var diagnosticsTitle: String {
-        if codex.isCheckingConnection {
-            return "Checking"
+    private var isCodexConnected: Bool {
+        switch codex.connectionStatusLabel {
+        case "Connected", "Ready":
+            return true
+        default:
+            return false
         }
-
-        guard let report = codex.connectivityReport else {
-            return "Not checked"
-        }
-
-        if report.isConnected {
-            return "Connected"
-        }
-        if case .loggedOut = report.authState {
-            return "Auth required"
-        }
-        return "Error"
     }
 
     private var chatPanelHeight: CGFloat {
-        let estimatedRowHeight: CGFloat = 34
-        let dynamic = CGFloat(max(4, chatMessages.count)) * estimatedRowHeight
-        return min(300, max(140, dynamic))
+        let dynamic = CGFloat(max(4, chatMessages.count)) * 32
+        return min(240, max(130, dynamic))
     }
 
     private func submitCommand() {
-        let command = commandText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !command.isEmpty else { return }
+        let trimmed = commandText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
 
-        appendMessage(.user, command)
+        chatMessages.append(CodexChatMessage(role: .user, text: trimmed))
         commandText = ""
 
         Task {
-            let response = await codex.handleChatCommand(command, monitor: monitor)
-            appendMessage(.assistant, response)
+            let response = await codex.handleChatCommand(trimmed, monitor: monitor)
+            await MainActor.run {
+                chatMessages.append(CodexChatMessage(role: .assistant, text: response))
+            }
         }
     }
 
     private func runQuickAction(_ action: CodexQuickAction) {
-        appendMessage(.user, action.prompt)
+        chatMessages.append(CodexChatMessage(role: .user, text: action.title))
 
         Task {
             let response = await codex.runQuickAction(action, monitor: monitor)
-            appendMessage(.assistant, response)
-        }
-    }
-
-    private func appendMessage(_ role: CodexChatMessage.Role, _ text: String) {
-        chatMessages.append(CodexChatMessage(role: role, text: text))
-        if chatMessages.count > 18 {
-            chatMessages.removeFirst(chatMessages.count - 18)
+            await MainActor.run {
+                chatMessages.append(CodexChatMessage(role: .assistant, text: response))
+            }
         }
     }
 }
 
-private struct CodexChatMessage: Identifiable {
+private struct CodexChatMessage: Identifiable, Equatable {
     enum Role {
         case user
         case assistant

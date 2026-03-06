@@ -6,45 +6,67 @@ import Observation
 @MainActor
 @Observable
 public final class AudioProcessMonitor: AudioMonitoringService {
+    private static let perAppGainEnabledKey = "audio.perAppGain.enabled"
+
     public private(set) var sessions: [AudioSession] = []
     public private(set) var errorMessage: String?
     public private(set) var lastRefresh = Date.distantPast
     public private(set) var outputVolume: Float = 0.5
     public private(set) var canControlOutputVolume = false
     public private(set) var outputDeviceName = "System Output"
+    public private(set) var isPerAppGainEnabled: Bool
+    public private(set) var audioCaptureAccessState: AudioCaptureAccessState
+    public private(set) var perAppControlsState: PerAppControlsState
 
     private let snapshotProvider: AudioProcessSnapshotProviding
+    private let muteBackend: AudioMuteBackend
     private let processControlBackend: AudioProcessControlBackend
     private let outputVolumeController: AudioOutputVolumeControlling
     private let appGainStore: AppGainStore
+    private let userDefaults: UserDefaults
     private let pollInterval: Duration
 
     private var mutedSessionIDs = Set<String>()
     private var sessionGainByID: [String: Float] = [:]
     private var sessionLastSeenByID: [String: Date] = [:]
-    private var previousProcessObjectIDs = Set<AudioObjectID>()
+    private var previousMutedProcessObjectIDs = Set<AudioObjectID>()
+    private var previousGainProcessObjectIDs = Set<AudioObjectID>()
     private var refreshTask: Task<Void, Never>?
 
     public init(pollInterval: Duration = .seconds(1)) {
         self.snapshotProvider = CoreAudioProcessSnapshotProvider()
-        self.processControlBackend = CoreAudioTapProcessControlBackend()
+        self.muteBackend = CoreAudioTapMuteBackend()
+        self.processControlBackend = AppGainServiceClient()
         self.outputVolumeController = CoreAudioOutputVolumeController()
         self.appGainStore = AppGainStore()
+        self.userDefaults = .standard
+        self.isPerAppGainEnabled = Self.loadPerAppGainEnabled(from: .standard)
+        self.audioCaptureAccessState = .unknown
+        self.perAppControlsState = .inactive
         self.pollInterval = pollInterval
         refreshOutputVolume()
     }
 
     init(
         snapshotProvider: AudioProcessSnapshotProviding = CoreAudioProcessSnapshotProvider(),
-        processControlBackend: AudioProcessControlBackend = CoreAudioTapProcessControlBackend(),
+        muteBackend: AudioMuteBackend = CoreAudioTapMuteBackend(),
+        processControlBackend: AudioProcessControlBackend = AppGainServiceClient(),
         outputVolumeController: AudioOutputVolumeControlling = CoreAudioOutputVolumeController(),
         appGainStore: AppGainStore = AppGainStore(),
+        userDefaults: UserDefaults = .standard,
+        audioCaptureAccessState: AudioCaptureAccessState = .unknown,
+        perAppControlsState: PerAppControlsState = .inactive,
         pollInterval: Duration = .seconds(1)
     ) {
         self.snapshotProvider = snapshotProvider
+        self.muteBackend = muteBackend
         self.processControlBackend = processControlBackend
         self.outputVolumeController = outputVolumeController
         self.appGainStore = appGainStore
+        self.userDefaults = userDefaults
+        self.isPerAppGainEnabled = Self.loadPerAppGainEnabled(from: userDefaults)
+        self.audioCaptureAccessState = audioCaptureAccessState
+        self.perAppControlsState = perAppControlsState
         self.pollInterval = pollInterval
         refreshOutputVolume()
     }
@@ -60,7 +82,10 @@ public final class AudioProcessMonitor: AudioMonitoringService {
     public func stop() {
         refreshTask?.cancel()
         refreshTask = nil
+        muteBackend.cleanup()
         processControlBackend.cleanup()
+        previousMutedProcessObjectIDs.removeAll()
+        previousGainProcessObjectIDs.removeAll()
     }
 
     public func refresh() {
@@ -69,11 +94,22 @@ public final class AudioProcessMonitor: AudioMonitoringService {
         do {
             let snapshots = try snapshotProvider.snapshots()
             var activeSessions = buildSessions(from: snapshots)
+            try reconcileMuteState(with: activeSessions)
             sessions = activeSessions
             lastRefresh = Date()
 
+            guard perAppControlsState == .active else {
+                sessions = activeSessions
+                errorMessage = nil
+                syncInactiveProcessControl()
+                return
+            }
+
             do {
                 try reconcileProcessControl(with: &activeSessions)
+                sessions = activeSessions
+                errorMessage = nil
+            } catch let error as AudioMonitorError where error == .appGainUnavailable || error == .audioCapturePermissionRequired {
                 sessions = activeSessions
                 errorMessage = nil
             } catch {
@@ -86,6 +122,11 @@ public final class AudioProcessMonitor: AudioMonitoringService {
     }
 
     public func toggleMute(sessionID: String) {
+        guard sessions.contains(where: { $0.id == sessionID }) else {
+            errorMessage = AudioMonitorError.sessionNotFound(sessionID).localizedDescription
+            return
+        }
+
         if mutedSessionIDs.contains(sessionID) {
             mutedSessionIDs.remove(sessionID)
         } else {
@@ -95,6 +136,11 @@ public final class AudioProcessMonitor: AudioMonitoringService {
     }
 
     public func setMuted(sessionID: String, muted: Bool) {
+        guard sessions.contains(where: { $0.id == sessionID }) else {
+            errorMessage = AudioMonitorError.sessionNotFound(sessionID).localizedDescription
+            return
+        }
+
         if muted {
             mutedSessionIDs.insert(sessionID)
         } else {
@@ -155,7 +201,12 @@ public final class AudioProcessMonitor: AudioMonitoringService {
                 appGainStore.setGain(clamped, for: bundleID)
             }
         }
-        
+
+        guard perAppControlsState == .active else {
+            errorMessage = nil
+            return
+        }
+
         applyProcessControlForSession(at: index)
     }
 
@@ -178,6 +229,34 @@ public final class AudioProcessMonitor: AudioMonitoringService {
 
     public func restoreAllSessionGains() {
         setAllSessionGains(1)
+    }
+
+    public func setPerAppGainEnabled(_ enabled: Bool) {
+        isPerAppGainEnabled = enabled
+        userDefaults.set(enabled, forKey: Self.perAppGainEnabledKey)
+        errorMessage = nil
+        if perAppControlsState == .active {
+            refresh()
+        }
+    }
+
+    public func requestPerAppControlsActivation() {
+        errorMessage = nil
+
+        if sessions.isEmpty {
+            refresh()
+        }
+
+        _ = activatePerAppControlsIfNeeded(
+            processObjectID: sessions.first(where: { !$0.processObjectIDs.isEmpty })?.processObjectIDs.first,
+            refreshAfterActivation: true
+        )
+    }
+
+    public func deactivatePerAppControls() {
+        perAppControlsState = .inactive
+        processControlBackend.cleanup()
+        previousGainProcessObjectIDs.removeAll()
     }
 
     public func toggleMute(for session: AudioSession) {
@@ -276,9 +355,50 @@ public final class AudioProcessMonitor: AudioMonitoringService {
         )
     }
 
+    private func reconcileMuteState(with activeSessions: [AudioSession]) throws {
+        let mutedProcessObjectIDs = Set(
+            activeSessions
+                .filter(\.isMuted)
+                .flatMap(\.processObjectIDs)
+        )
+
+        let processObjectIDsToUnmute = previousMutedProcessObjectIDs.subtracting(mutedProcessObjectIDs)
+        var firstError: Error?
+
+        for processObjectID in processObjectIDsToUnmute {
+            do {
+                try muteBackend.unmute(processObjectID: processObjectID)
+            } catch {
+                if firstError == nil {
+                    firstError = error
+                }
+            }
+        }
+
+        for processObjectID in mutedProcessObjectIDs {
+            do {
+                try muteBackend.mute(processObjectID: processObjectID)
+            } catch {
+                if firstError == nil {
+                    firstError = error
+                }
+            }
+        }
+
+        previousMutedProcessObjectIDs = mutedProcessObjectIDs
+
+        if let firstError {
+            throw firstError
+        }
+    }
+
     private func reconcileProcessControl(with activeSessions: inout [AudioSession]) throws {
-        let currentProcessObjectIDs = Set(activeSessions.flatMap(\.processObjectIDs))
-        let removedProcessObjectIDs = previousProcessObjectIDs.subtracting(currentProcessObjectIDs)
+        let currentProcessObjectIDs = Set(
+            activeSessions
+                .filter { shouldApplyGainControl(for: $0) }
+                .flatMap(\.processObjectIDs)
+        )
+        let removedProcessObjectIDs = previousGainProcessObjectIDs.subtracting(currentProcessObjectIDs)
 
         var firstError: Error?
 
@@ -294,15 +414,21 @@ public final class AudioProcessMonitor: AudioMonitoringService {
 
         struct ProcessState {
             let sessionID: String
-            let isMuted: Bool
             let gain: Float
         }
 
         let desiredStateByProcessObjectID = Dictionary(
             uniqueKeysWithValues: activeSessions
+                .filter { shouldApplyGainControl(for: $0) }
                 .flatMap { session in
                     session.processObjectIDs.map { processObjectID in
-                        (processObjectID, ProcessState(sessionID: session.id, isMuted: session.isMuted, gain: session.appGain))
+                        (
+                            processObjectID,
+                            ProcessState(
+                                sessionID: session.id,
+                                gain: effectiveGain(for: session)
+                            )
+                        )
                     }
                 }
         )
@@ -311,29 +437,26 @@ public final class AudioProcessMonitor: AudioMonitoringService {
             do {
                 try processControlBackend.apply(
                     processObjectID: processObjectID,
-                    muted: state.isMuted,
+                    muted: false,
                     gain: state.gain
                 )
             } catch let error as AudioMonitorError where error == .appGainUnavailable || error == .audioCapturePermissionRequired {
                 if let index = activeSessions.firstIndex(where: { $0.id == state.sessionID }) {
                     activeSessions[index].isAppGainAvailable = false
-                    activeSessions[index].appGain = 1.0
-                    sessionGainByID[state.sessionID] = 1.0
-                    if let bundleID = activeSessions[index].bundleID {
-                        appGainStore.removeGain(for: bundleID)
-                    }
                 }
 
-                if error == .audioCapturePermissionRequired, firstError == nil {
+                if error == .audioCapturePermissionRequired {
+                    handlePermissionDenial(in: &activeSessions)
+                    firstError = error
+                    break
+                }
+
+                if firstError == nil {
                     firstError = error
                 }
 
                 do {
-                    try processControlBackend.apply(
-                        processObjectID: processObjectID,
-                        muted: state.isMuted,
-                        gain: 1.0
-                    )
+                    try processControlBackend.remove(processObjectID: processObjectID)
                 } catch {
                     if firstError == nil {
                         firstError = error
@@ -346,7 +469,7 @@ public final class AudioProcessMonitor: AudioMonitoringService {
             }
         }
 
-        previousProcessObjectIDs = currentProcessObjectIDs
+        previousGainProcessObjectIDs = perAppControlsState == .active ? currentProcessObjectIDs : []
 
         if let firstError {
             throw firstError
@@ -417,36 +540,48 @@ public final class AudioProcessMonitor: AudioMonitoringService {
 
     private func applyProcessControlForSession(at index: Int) {
         guard sessions.indices.contains(index) else { return }
+        guard perAppControlsState == .active else {
+            errorMessage = nil
+            return
+        }
 
         let session = sessions[index]
         var firstError: Error?
+        let effectiveGain = effectiveGain(for: session)
 
         for processObjectID in session.processObjectIDs {
-            do {
-                try processControlBackend.apply(
-                    processObjectID: processObjectID,
-                    muted: session.isMuted,
-                    gain: session.appGain
-                )
-            } catch AudioMonitorError.appGainUnavailable {
-                sessions[index].isAppGainAvailable = false
-                sessions[index].appGain = 1.0
-                sessionGainByID[session.id] = 1.0
-                if let bundleID = session.bundleID {
-                    appGainStore.removeGain(for: bundleID)
-                }
-
+            guard shouldApplyGainControl(for: session) else {
                 do {
-                    try processControlBackend.apply(
-                        processObjectID: processObjectID,
-                        muted: session.isMuted,
-                        gain: 1.0
-                    )
+                    try processControlBackend.remove(processObjectID: processObjectID)
                 } catch {
                     if firstError == nil {
                         firstError = error
                     }
                 }
+                continue
+            }
+
+            do {
+                try processControlBackend.apply(
+                    processObjectID: processObjectID,
+                    muted: false,
+                    gain: effectiveGain
+                )
+            } catch AudioMonitorError.appGainUnavailable {
+                sessions[index].isAppGainAvailable = false
+
+                do {
+                    try processControlBackend.remove(processObjectID: processObjectID)
+                } catch {
+                    if firstError == nil {
+                        firstError = error
+                    }
+                }
+            } catch AudioMonitorError.audioCapturePermissionRequired {
+                sessions[index].isAppGainAvailable = false
+                handlePermissionDenial()
+                firstError = AudioMonitorError.audioCapturePermissionRequired
+                break
             } catch {
                 if firstError == nil {
                     firstError = error
@@ -455,9 +590,83 @@ public final class AudioProcessMonitor: AudioMonitoringService {
         }
 
         if let firstError {
-            errorMessage = "No se pudo aplicar App Gain: \(firstError.localizedDescription)"
+            if let monitorError = firstError as? AudioMonitorError,
+               monitorError == .appGainUnavailable || monitorError == .audioCapturePermissionRequired {
+                errorMessage = nil
+            } else {
+                errorMessage = "No se pudo aplicar App Gain: \(firstError.localizedDescription)"
+            }
         } else {
             errorMessage = nil
         }
+    }
+
+    private func effectiveGain(for session: AudioSession) -> Float {
+        guard perAppControlsState == .active, isPerAppGainEnabled, !session.isMuted else {
+            return 1.0
+        }
+        return session.appGain
+    }
+
+    private func shouldApplyGainControl(for session: AudioSession) -> Bool {
+        effectiveGain(for: session) < 0.999
+    }
+
+    @discardableResult
+    private func activatePerAppControlsIfNeeded(
+        processObjectID: AudioObjectID?,
+        refreshAfterActivation: Bool
+    ) -> Bool {
+        if perAppControlsState == .active {
+            return true
+        }
+
+        guard let processObjectID else {
+            return false
+        }
+
+        do {
+            try processControlBackend.requestAudioCaptureAccess(processObjectID: processObjectID)
+            audioCaptureAccessState = .granted
+            perAppControlsState = .active
+            if refreshAfterActivation {
+                refresh()
+            }
+            return true
+        } catch AudioMonitorError.audioCapturePermissionRequired {
+            audioCaptureAccessState = .denied
+            deactivatePerAppControls()
+            errorMessage = nil
+            return false
+        } catch {
+            perAppControlsState = .inactive
+            errorMessage = "No se pudieron activar los controles por app: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    private func syncInactiveProcessControl() {
+        guard previousGainProcessObjectIDs.isEmpty == false else { return }
+        processControlBackend.cleanup()
+        previousGainProcessObjectIDs.removeAll()
+    }
+
+    private func handlePermissionDenial(in activeSessions: inout [AudioSession]) {
+        audioCaptureAccessState = .denied
+        deactivatePerAppControls()
+        errorMessage = nil
+    }
+
+    private func handlePermissionDenial() {
+        audioCaptureAccessState = .denied
+        deactivatePerAppControls()
+        errorMessage = nil
+    }
+
+    private static func loadPerAppGainEnabled(from userDefaults: UserDefaults) -> Bool {
+        if userDefaults.object(forKey: perAppGainEnabledKey) == nil {
+            return false
+        }
+        return userDefaults.bool(forKey: perAppGainEnabledKey)
     }
 }

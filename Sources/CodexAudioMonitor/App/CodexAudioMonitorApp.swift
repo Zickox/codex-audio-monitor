@@ -33,12 +33,6 @@ struct CodexAudioMonitorApp: App {
             }
         }
         .menuBarExtraStyle(.window)
-
-        Settings {
-            SettingsView(codex: codexRuntime)
-                .frame(width: 560, height: 420)
-                .padding(24)
-        }
     }
 }
 

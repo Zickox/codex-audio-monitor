@@ -9,7 +9,6 @@ struct AudioMenuView: View {
     @Bindable var monitor: AudioProcessMonitor
     @Bindable var codex: CodexRuntimeController
     @State private var expandedSessionID: String?
-    @State private var selectedFilter: SessionFilter = .all
     @State private var selectedTab: MenuTab = .audio
 
     var body: some View {
@@ -27,18 +26,15 @@ struct AudioMenuView: View {
         .frame(width: DesignTokens.menuWidth)
         .background(menuBackground)
         .onAppear {
+            selectedTab = .audio
             monitor.start()
             monitor.refresh()
             codex.start()
-        }
-        .onChange(of: selectedFilter) {
-            collapseExpandedIfFilteredOut()
         }
         .onChange(of: monitor.sessions.map(\.id)) {
             collapseExpandedIfFilteredOut()
         }
         .animation(.easeInOut(duration: 0.22), value: monitor.sessions.count)
-        .animation(.easeInOut(duration: 0.2), value: selectedTab)
     }
 
     private var menuContent: some View {
@@ -76,6 +72,7 @@ struct AudioMenuView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .monospacedDigit()
 
             AudioLevelAnimationView(
                 isActive: hasLiveAudio,
@@ -87,23 +84,27 @@ struct AudioMenuView: View {
     }
 
     private var tabSelector: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             tabButton(.audio, title: "Audio", icon: "music.note.list")
             tabButton(.chat, title: "Chat", icon: "bubble.left.and.bubble.right")
+            tabButton(.settings, title: "Settings", icon: "gearshape")
         }
     }
 
     @ViewBuilder
     private var tabContent: some View {
-        ZStack {
-            switch selectedTab {
-            case .audio:
-                audioTabView
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            case .chat:
-                CodexStatusCardView(codex: codex, monitor: monitor)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        switch selectedTab {
+        case .audio:
+            audioTabView
+        case .chat:
+            CodexStatusCardView(codex: codex, monitor: monitor)
+        case .settings:
+            ScrollView {
+                SettingsView(monitor: monitor, codex: codex)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .frame(height: settingsTabHeight, alignment: .top)
+            .scrollIndicators(.hidden)
         }
     }
 
@@ -137,60 +138,31 @@ struct AudioMenuView: View {
                 .lineLimit(1)
         }
         .padding(.horizontal, 2)
-        .padding(.vertical, 1)
     }
 
     private var sessionsView: some View {
         VStack(alignment: .leading, spacing: DesignTokens.spacingS) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Audio Sessions")
+            HStack(alignment: .center, spacing: DesignTokens.spacingS) {
+                Text("Sessions")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
+
                 Spacer()
-                Text(lastRefreshLabel)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
 
-            sessionFiltersBar
-
-            if isAudioCapturePermissionRequired {
-                audioCapturePermissionBanner
-            }
-
-            if !monitor.sessions.isEmpty {
-                HStack {
-                    Text("\(filteredSessions.count) visible")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Restore All") {
-                        monitor.restoreAllSessionGains()
-                    }
-                    .controlSize(.small)
-                    .disabled(!hasCustomSessionGain)
-                    .glassActionButtonStyle()
-
+                if !monitor.sessions.isEmpty {
                     Button(areAllSessionsMuted ? "Unmute All" : "Mute All") {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             monitor.setAllMuted(!areAllSessionsMuted)
                         }
                     }
-                    .controlSize(.small)
-                    .glassActionButtonStyle()
+                    .font(.caption.weight(.semibold))
+                    .glassSecondaryButtonStyle()
                 }
             }
+            .padding(.bottom, 2)
 
             if monitor.sessions.isEmpty {
-                Text("No active audio sessions right now.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .transition(.opacity)
-            } else if filteredSessions.isEmpty {
-                Text(filteredEmptyStateLabel)
+                Text("No active audio right now.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 14)
@@ -199,11 +171,10 @@ struct AudioMenuView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: DesignTokens.spacingS) {
-                        ForEach(filteredSessions) { session in
+                        ForEach(monitor.sessions) { session in
                             SessionRowView(
                                 session: session,
                                 isExpanded: expandedSessionID == session.id,
-                                audioCapturePermissionRequired: isAudioCapturePermissionRequired,
                                 onToggleExpanded: {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         expandedSessionID = expandedSessionID == session.id ? nil : session.id
@@ -213,18 +184,6 @@ struct AudioMenuView: View {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     monitor.toggleMute(sessionID: sessionID)
                                 }
-                            } onSolo: { sessionID in
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    monitor.solo(sessionID: sessionID)
-                                }
-                            } onMuteOthers: { sessionID in
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    monitor.muteOthers(except: sessionID)
-                                }
-                            } onResetGain: { sessionID in
-                                monitor.setSessionGain(sessionID: sessionID, gain: 1)
-                            } onSetGain: { sessionID, gain in
-                                monitor.setSessionGain(sessionID: sessionID, gain: gain)
                             }
                         }
                     }
@@ -234,67 +193,14 @@ struct AudioMenuView: View {
                 .scrollIndicators(.automatic)
             }
         }
-        .padding(DesignTokens.cardPadding)
+        .padding(.top, 8)
+        .padding(.horizontal, DesignTokens.cardPadding)
+        .padding(.bottom, DesignTokens.cardPadding)
         .glassPanel(cornerRadius: DesignTokens.rowCornerRadius)
-    }
-
-    private var sessionFiltersBar: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 6) {
-                ForEach(SessionFilter.allCases) { filter in
-                    Button {
-                        selectedFilter = filter
-                    } label: {
-                        HStack(spacing: 6) {
-                            if filter != .all {
-                                Circle()
-                                    .fill(filter.color)
-                                    .frame(width: 7, height: 7)
-                            }
-                            Text(filter.title)
-                                .font(.system(size: 11, weight: .medium))
-                            Text("\(sessionCount(for: filter))")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule()
-                                .fill(selectedFilter == filter ? filter.color.opacity(0.2) : Color.secondary.opacity(0.16))
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(selectedFilter == filter ? filter.color.opacity(0.7) : Color.clear, lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.vertical, 2)
-        }
-        .scrollIndicators(.hidden)
     }
 
     private var footerView: some View {
         HStack(spacing: DesignTokens.spacingS) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    monitor.refresh()
-                }
-                Task { await codex.refreshAuth() }
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-            }
-            .keyboardShortcut("r")
-            .controlSize(.small)
-            .glassActionButtonStyle()
-
-            SettingsLink {
-                Label("Settings", systemImage: "gearshape")
-            }
-            .controlSize(.small)
-
             Spacer()
 
             Button {
@@ -303,36 +209,12 @@ struct AudioMenuView: View {
                 NSApplication.shared.terminate(nil)
             } label: {
                 Label("Quit", systemImage: "xmark.circle")
+                    .font(.caption.weight(.semibold))
+                    .frame(minWidth: DesignTokens.utilityButtonMinWidth)
             }
-            .controlSize(.small)
+            .glassUtilityButtonStyle()
         }
         .padding(.horizontal, 4)
-    }
-
-    private var audioCapturePermissionBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "waveform.badge.exclamationmark")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.orange)
-
-            Text("App Gain necesita permiso de captura de audio para atenuar por aplicación.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Spacer(minLength: 8)
-
-            Button("Open Settings") {
-                openAudioCaptureSettings()
-            }
-            .controlSize(.mini)
-        }
-        .padding(8)
-        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(.orange.opacity(0.25), lineWidth: 1)
-        )
     }
 
     private var menuBackground: some View {
@@ -354,22 +236,12 @@ struct AudioMenuView: View {
 
     private func tabButton(_ tab: MenuTab, title: String, icon: String) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                selectedTab = tab
-            }
+            selectedTab = tab
         } label: {
             Label(title, systemImage: icon)
                 .font(.system(size: 11, weight: .semibold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
-                .background(
-                    Capsule()
-                        .fill(selectedTab == tab ? DesignTokens.brand.opacity(0.26) : Color.secondary.opacity(0.14))
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(selectedTab == tab ? DesignTokens.brand.opacity(0.55) : Color.clear, lineWidth: 1)
-                )
+                .glassTabCapsule(selected: selectedTab == tab)
         }
         .buttonStyle(.plain)
     }
@@ -390,60 +262,37 @@ struct AudioMenuView: View {
 
     private var activeSessionsLabel: String {
         let totalCount = monitor.sessions.count
-        let mutedCount = monitor.sessions.filter(\.isMuted).count
-        if mutedCount == 0 {
-            return "\(totalCount) live"
+        if totalCount == 1 {
+            return "1 live"
         }
-        return "\(totalCount) live • \(mutedCount) muted"
-    }
-
-    private var lastRefreshLabel: String {
-        guard monitor.lastRefresh > .distantPast else {
-            return "Never refreshed"
-        }
-        return "Updated \(monitor.lastRefresh.formatted(date: .omitted, time: .shortened))"
-    }
-
-    private var filteredSessions: [AudioSession] {
-        switch selectedFilter {
-        case .all:
-            return monitor.sessions
-        case .active:
-            return monitor.sessions.filter { !$0.isMuted }
-        case .muted:
-            return monitor.sessions.filter(\.isMuted)
-        }
-    }
-
-    private var filteredEmptyStateLabel: String {
-        switch selectedFilter {
-        case .all:
-            return "No active audio sessions right now."
-        case .active:
-            return "No active (unmuted) sessions right now."
-        case .muted:
-            return "No muted sessions right now."
-        }
+        return "\(totalCount) live"
     }
 
     private var areAllSessionsMuted: Bool {
         !monitor.sessions.isEmpty && monitor.sessions.allSatisfy(\.isMuted)
     }
 
-    private var hasCustomSessionGain: Bool {
-        monitor.sessions.contains { $0.appGain < 0.999 }
-    }
-
-    private var isAudioCapturePermissionRequired: Bool {
-        monitor.errorMessage?.localizedCaseInsensitiveContains("captura de audio") == true
-    }
-
     private var sessionsListHeight: CGFloat {
-        let rowEstimate: CGFloat = 78
-        let base = max(1, filteredSessions.count)
-        let expandedBonus: CGFloat = expandedSessionID == nil ? 0 : 118
+        let rowEstimate: CGFloat = 68
+        let base = max(1, monitor.sessions.count)
+        let expandedBonus: CGFloat = expandedSessionID == nil ? 0 : 52
         let dynamicHeight = CGFloat(base) * rowEstimate + expandedBonus
-        return min(500, max(180, dynamicHeight))
+        return min(420, max(150, dynamicHeight))
+    }
+
+    private var settingsTabHeight: CGFloat {
+        if monitor.isPerAppGainEnabled {
+            return 316
+        }
+        return 252
+    }
+
+    private func collapseExpandedIfFilteredOut() {
+        guard let expandedSessionID else { return }
+        let stillVisible = monitor.sessions.contains { $0.id == expandedSessionID }
+        if !stillVisible {
+            self.expandedSessionID = nil
+        }
     }
 
     private var outputVolumeBinding: Binding<Double> {
@@ -452,67 +301,12 @@ struct AudioMenuView: View {
             set: { monitor.setOutputVolume(Float($0)) }
         )
     }
-
-    private func sessionCount(for filter: SessionFilter) -> Int {
-        switch filter {
-        case .all:
-            return monitor.sessions.count
-        case .active:
-            return monitor.sessions.filter { !$0.isMuted }.count
-        case .muted:
-            return monitor.sessions.filter(\.isMuted).count
-        }
-    }
-
-    private func collapseExpandedIfFilteredOut() {
-        guard let expandedSessionID else { return }
-        let stillVisible = filteredSessions.contains { $0.id == expandedSessionID }
-        if !stillVisible {
-            self.expandedSessionID = nil
-        }
-    }
-
-    private func openAudioCaptureSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture") else {
-            return
-        }
-        NSWorkspace.shared.open(url)
-    }
 }
 
 private enum MenuTab: String, CaseIterable, Identifiable {
     case audio
     case chat
+    case settings
 
     var id: String { rawValue }
-}
-
-private enum SessionFilter: String, CaseIterable, Identifiable {
-    case all
-    case active
-    case muted
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .all:
-            return "All"
-        case .active:
-            return "Active"
-        case .muted:
-            return "Muted"
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .all:
-            return .white
-        case .active:
-            return DesignTokens.brand
-        case .muted:
-            return .orange
-        }
-    }
 }

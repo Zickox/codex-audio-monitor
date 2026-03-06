@@ -18,7 +18,7 @@ final class CodexRuntimeControllerTests: XCTestCase {
             for: "mutea todo"
         )
 
-        let monitor = makeMonitor()
+        let monitor = makeMonitor(audioCaptureAccessState: .unknown, perAppControlsState: .inactive)
         let runtime = CodexRuntimeController(service: service)
 
         let response = await runtime.handleChatCommand("mutea todo", monitor: monitor)
@@ -84,6 +84,34 @@ final class CodexRuntimeControllerTests: XCTestCase {
         XCTAssertTrue(response.contains("Ajusté"))
     }
 
+    func testHandleChatCommandReturnsGuidanceWhenAppGainControlsAreInactive() async {
+        let service = FakeCodexIntegrationService()
+        await service.setAuthState(.loggedIn(provider: "OAuth"))
+        await service.setPlan(
+            CodexActionPlan(
+                assistantMessage: "Intentando ajustar gain",
+                actions: [
+                    CodexAction(
+                        type: .setSessionGain,
+                        sessionID: "bundle:com.spotify.client",
+                        volumePercent: nil,
+                        gainPercent: 30
+                    )
+                ]
+            ),
+            for: "spotify 30%"
+        )
+
+        let monitor = makeMonitor(audioCaptureAccessState: .unknown, perAppControlsState: .inactive)
+        monitor.refresh()
+        let runtime = CodexRuntimeController(service: service)
+
+        let response = await runtime.handleChatCommand("spotify 30%", monitor: monitor)
+
+        XCTAssertTrue(response.contains("App Gain controls are disabled"))
+        XCTAssertEqual(monitor.sessions.first?.appGain ?? 0, 1, accuracy: 0.001)
+    }
+
     func testCheckConnectivityStoresReportAndMessage() async {
         let service = FakeCodexIntegrationService()
         await service.setAuthState(.loggedIn(provider: "OAuth"))
@@ -107,6 +135,8 @@ final class CodexRuntimeControllerTests: XCTestCase {
         XCTAssertEqual(runtime.authState, .loggedIn(provider: "OAuth"))
         XCTAssertEqual(runtime.connectivityReport?.roundTripMs, 88)
         XCTAssertEqual(runtime.lastMessage, "Codex conectado (88 ms).")
+        XCTAssertEqual(runtime.connectionStatusLabel, "Connected")
+        XCTAssertNil(runtime.lastUserFacingError)
     }
 
     func testRecommendedQuickActionsExposeCoreCommands() async {
@@ -117,10 +147,10 @@ final class CodexRuntimeControllerTests: XCTestCase {
 
         let actions = runtime.recommendedQuickActions(for: monitor)
 
+        XCTAssertEqual(actions.count, 3)
         XCTAssertTrue(actions.contains(where: { $0.prompt == "mutea todo" }))
         XCTAssertTrue(actions.contains(where: { $0.prompt == "restaura gains" }))
         XCTAssertTrue(actions.contains(where: { $0.prompt == "estado" }))
-        XCTAssertTrue(actions.contains(where: { $0.prompt.contains("30%") }))
     }
 
     func testRestoreAllShortcutDoesNotCallCodexService() async {
@@ -147,7 +177,10 @@ final class CodexRuntimeControllerTests: XCTestCase {
         XCTAssertEqual(response, "Restauré todas las apps a 100%.")
     }
 
-    private func makeMonitor() -> AudioProcessMonitor {
+    private func makeMonitor(
+        audioCaptureAccessState: AudioCaptureAccessState = .granted,
+        perAppControlsState: PerAppControlsState = .active
+    ) -> AudioProcessMonitor {
         let snapshotProvider = StubSnapshotProvider([
             AudioProcessSnapshot(
                 processObjectID: AudioObjectID(101),
@@ -164,6 +197,7 @@ final class CodexRuntimeControllerTests: XCTestCase {
         ])
 
         let processControlBackend = RecordingProcessControlBackend()
+        let muteBackend = RecordingMuteBackend()
         let outputController = StubOutputVolumeController(
             state: AudioOutputVolumeState(
                 volume: 0.6,
@@ -171,11 +205,22 @@ final class CodexRuntimeControllerTests: XCTestCase {
                 deviceName: "Test Device"
             )
         )
+        let defaults = UserDefaults(suiteName: "CodexRuntimeControllerTests.\(UUID().uuidString)")!
+        defaults.set(true, forKey: "audio.perAppGain.enabled")
+        let appGainStore = AppGainStore(
+            userDefaults: defaults,
+            key: "CodexRuntimeControllerTests.appGainStore"
+        )
 
         return AudioProcessMonitor(
             snapshotProvider: snapshotProvider,
+            muteBackend: muteBackend,
             processControlBackend: processControlBackend,
             outputVolumeController: outputController,
+            appGainStore: appGainStore,
+            userDefaults: defaults,
+            audioCaptureAccessState: audioCaptureAccessState,
+            perAppControlsState: perAppControlsState,
             pollInterval: .seconds(5)
         )
     }

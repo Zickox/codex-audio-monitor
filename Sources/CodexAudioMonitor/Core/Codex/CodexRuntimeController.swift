@@ -16,6 +16,7 @@ final class CodexRuntimeController {
     private(set) var isCheckingConnection = false
     private(set) var lastMessage: String?
     private(set) var connectivityReport: CodexConnectivityReport?
+    private(set) var lastUserFacingError: String?
 
     init(service: CodexIntegrationService) {
         self.service = service
@@ -49,8 +50,10 @@ final class CodexRuntimeController {
         authState = await service.ensureLogin()
         if case .loggedIn = authState {
             lastMessage = "Sesión Codex activa."
+            lastUserFacingError = nil
         } else {
             lastMessage = "No se pudo iniciar sesión en Codex."
+            lastUserFacingError = lastMessage
         }
     }
 
@@ -65,13 +68,15 @@ final class CodexRuntimeController {
         if report.isConnected {
             let latency = report.roundTripMs.map { "\($0) ms" } ?? "n/a"
             lastMessage = "Codex conectado (\(latency))."
+            lastUserFacingError = nil
         } else {
             lastMessage = report.errorMessage ?? "No se pudo validar la conexión con Codex."
+            lastUserFacingError = lastMessage
         }
     }
 
     func recommendedQuickActions(for monitor: AudioProcessMonitor) -> [CodexQuickAction] {
-        var actions: [CodexQuickAction] = [
+        [
             CodexQuickAction(
                 title: "Mute all",
                 prompt: "mutea todo",
@@ -88,18 +93,6 @@ final class CodexRuntimeController {
                 systemImage: "waveform.path.ecg"
             )
         ]
-
-        if let primarySession = monitor.sessions.first(where: { !$0.isMuted }) ?? monitor.sessions.first {
-            actions.append(
-                CodexQuickAction(
-                    title: "Baja \(primarySession.displayName)",
-                    prompt: "\(primarySession.displayName) 30%",
-                    systemImage: "dial.low"
-                )
-            )
-        }
-
-        return actions
     }
 
     func runQuickAction(_ action: CodexQuickAction, monitor: AudioProcessMonitor) async -> String {
@@ -137,6 +130,7 @@ final class CodexRuntimeController {
 
         let normalizedCommand = normalize(command)
         if containsAny(normalizedCommand, Self.helpKeywords) {
+            lastUserFacingError = nil
             return Self.helpMessage
         }
 
@@ -156,6 +150,7 @@ final class CodexRuntimeController {
             guard case .loggedIn = authState else {
                 let authMessage = "No pude autenticar Codex. Ejecuta `login codex` y vuelve a intentar."
                 lastMessage = authMessage
+                lastUserFacingError = authMessage
                 return authMessage
             }
         }
@@ -180,12 +175,38 @@ final class CodexRuntimeController {
             let effects = apply(plan.actions, monitor: monitor)
             let response = composeResponse(baseMessage: plan.assistantMessage, effects: effects)
             lastMessage = response
+            lastUserFacingError = nil
             return response
         } catch {
             let failure = "Error usando Codex real: \(error.localizedDescription)"
             lastMessage = failure
+            lastUserFacingError = failure
             return failure
         }
+    }
+
+    var connectionStatusLabel: String {
+        if isCheckingConnection {
+            return "Checking"
+        }
+
+        guard let report = connectivityReport else {
+            if case .loggedIn = authState {
+                return "Ready"
+            }
+            if case .loggedOut = authState {
+                return "Auth required"
+            }
+            return "Not checked"
+        }
+
+        if report.isConnected {
+            return "Connected"
+        }
+        if case .loggedOut = report.authState {
+            return "Auth required"
+        }
+        return "Error"
     }
 
     private func apply(_ actions: [CodexAction], monitor: AudioProcessMonitor) -> [String] {
@@ -249,6 +270,14 @@ final class CodexRuntimeController {
                 notes.append("Volumen ajustado a \(Int(monitor.outputVolume * 100))%.")
 
             case .setSessionGain:
+                guard monitor.perAppControlsState == .active else {
+                    notes.append(Self.appGainControlsDisabledMessage)
+                    continue
+                }
+                guard monitor.isPerAppGainEnabled else {
+                    notes.append("Activa App Gain en Settings para ajustar volumen por app.")
+                    continue
+                }
                 guard let sessionID = action.sessionID else {
                     notes.append("No se indicó `sessionID` para ajustar App Gain.")
                     continue
@@ -323,6 +352,7 @@ private extension CodexRuntimeController {
     static let restoreKeywords = ["restaura gains", "restore all", "restaura todo", "restaura audio", "reset gains"]
     static let statusKeywords = ["estado", "status"]
     static let muteAllKeywords = ["mutea todo", "mute all", "silencia todo"]
+    static let appGainControlsDisabledMessage = "App Gain controls are disabled. Enable them in Settings first."
 
     static let helpMessage = """
     Comandos sugeridos:

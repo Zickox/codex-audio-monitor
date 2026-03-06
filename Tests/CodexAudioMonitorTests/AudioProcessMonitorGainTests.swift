@@ -80,8 +80,16 @@ final class AudioProcessMonitorGainTests: XCTestCase {
                 isRunningOutput: true
             )
         ])
+        let muteBackend = RecordingMuteBackend()
         let backend = RecordingProcessControlBackend()
-        let monitor = makeMonitor(snapshotProvider: snapshots, backend: backend, store: AppGainStore())
+        let storeDefaults = makeDefaults()
+        let store = AppGainStore(userDefaults: storeDefaults, key: "test.gain.store")
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            muteBackend: muteBackend,
+            backend: backend,
+            store: store
+        )
 
         monitor.refresh()
         monitor.setMuted(sessionID: "bundle:com.spotify.client", muted: true)
@@ -95,13 +103,8 @@ final class AudioProcessMonitorGainTests: XCTestCase {
             XCTFail("Expected a session with gain")
         }
 
-        let latest = backend.applyCalls.last
-        XCTAssertEqual(latest?.muted, true)
-        if let latest {
-            XCTAssertEqual(latest.gain, 0.2, accuracy: 0.0001)
-        } else {
-            XCTFail("Expected apply call")
-        }
+        XCTAssertEqual(muteBackend.mutedProcessIDs, [AudioObjectID(501)])
+        XCTAssertTrue(backend.applyCalls.isEmpty)
     }
 
     func testUnmutedSessionsArePrioritizedOverMutedSessions() {
@@ -203,7 +206,7 @@ final class AudioProcessMonitorGainTests: XCTestCase {
         XCTAssertNil(store.gain(for: "com.spotify.client"))
     }
 
-    func testRemovedProcessTriggersBackendRemove() {
+    func testRemovedMutedProcessTriggersBackendUnmute() {
         let snapshots = StubSnapshotProvider([
             AudioProcessSnapshot(
                 processObjectID: AudioObjectID(601),
@@ -212,18 +215,26 @@ final class AudioProcessMonitorGainTests: XCTestCase {
                 isRunningOutput: true
             )
         ])
+        let muteBackend = RecordingMuteBackend()
         let backend = RecordingProcessControlBackend()
-        let monitor = makeMonitor(snapshotProvider: snapshots, backend: backend, store: AppGainStore())
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            muteBackend: muteBackend,
+            backend: backend,
+            store: AppGainStore()
+        )
 
         monitor.refresh()
+        monitor.setMuted(sessionID: "bundle:com.spotify.client", muted: true)
         snapshots.currentSnapshots = []
         monitor.refresh()
 
-        XCTAssertTrue(backend.removedProcessIDs.contains(AudioObjectID(601)))
+        XCTAssertTrue(muteBackend.unmutedProcessIDs.contains(AudioObjectID(601)))
     }
 
     func testAudioCapturePermissionFailureKeepsSessionVisibleAndSurfacesError() {
         let defaults = makeDefaults()
+        defaults.set(true, forKey: "audio.perAppGain.enabled")
         let store = AppGainStore(userDefaults: defaults, key: "test.gain.store")
         store.setGain(0.5, for: "com.apple.Music")
 
@@ -240,15 +251,371 @@ final class AudioProcessMonitorGainTests: XCTestCase {
         let monitor = makeMonitor(
             snapshotProvider: snapshots,
             backend: backend,
-            store: store
+            store: store,
+            defaults: defaults,
+            audioCaptureAccessState: .granted,
+            perAppControlsState: .active
         )
 
         monitor.refresh()
 
         XCTAssertEqual(monitor.sessions.count, 1)
-        XCTAssertEqual(monitor.sessions.first?.isAppGainAvailable, false)
-        XCTAssertEqual(monitor.sessions.first?.appGain ?? 0, 1.0, accuracy: 0.0001)
-        XCTAssertTrue(monitor.errorMessage?.contains("permiso de captura de audio del sistema") == true)
+        XCTAssertEqual(monitor.sessions.first?.appGain ?? 0, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(monitor.audioCaptureAccessState, .denied)
+        XCTAssertEqual(monitor.perAppControlsState, .inactive)
+        XCTAssertEqual(monitor.sessions.first?.isMuted, false)
+        XCTAssertNil(monitor.errorMessage)
+    }
+
+    func testAppGainPermissionFailureDoesNotClearExistingMutedState() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: "audio.perAppGain.enabled")
+        let store = AppGainStore(userDefaults: defaults, key: "test.gain.store")
+        store.setGain(0.4, for: "com.apple.TV")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(702),
+                pid: 3102,
+                bundleID: "com.apple.Music",
+                isRunningOutput: true
+            ),
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(703),
+                pid: 3103,
+                bundleID: "com.apple.TV",
+                isRunningOutput: true
+            )
+        ])
+
+        let muteBackend = RecordingMuteBackend()
+        let backend = PermissionFailingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            muteBackend: muteBackend,
+            backend: backend,
+            store: store,
+            defaults: defaults,
+            audioCaptureAccessState: .granted,
+            perAppControlsState: .active
+        )
+
+        monitor.refresh()
+        monitor.setMuted(sessionID: "bundle:com.apple.Music", muted: true)
+        monitor.setSessionGain(sessionID: "bundle:com.apple.TV", gain: 0.4)
+
+        XCTAssertEqual(monitor.sessions.count, 2)
+        XCTAssertEqual(
+            monitor.sessions.first(where: { $0.id == "bundle:com.apple.Music" })?.isMuted,
+            true
+        )
+        XCTAssertEqual(monitor.audioCaptureAccessState, .denied)
+        XCTAssertEqual(monitor.perAppControlsState, .inactive)
+        XCTAssertNil(monitor.errorMessage)
+        XCTAssertEqual(muteBackend.mutedProcessIDs.last, AudioObjectID(702))
+    }
+
+    func testDisabledPerAppGainFallsBackToMuteOnlyPath() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "audio.perAppGain.enabled")
+        let store = AppGainStore(userDefaults: defaults, key: "test.gain.store")
+        store.setGain(0.35, for: "com.spotify.client")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(711),
+                pid: 3201,
+                bundleID: "com.spotify.client",
+                isRunningOutput: true
+            )
+        ])
+
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            backend: backend,
+            store: store,
+            defaults: defaults
+        )
+
+        monitor.refresh()
+
+        XCTAssertFalse(monitor.isPerAppGainEnabled)
+        XCTAssertEqual(monitor.sessions.first?.appGain ?? 0, 0.35, accuracy: 0.0001)
+        XCTAssertTrue(backend.applyCalls.isEmpty)
+    }
+
+    func testSetPerAppGainEnabledDoesNotRequestAudioCaptureAccess() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "audio.perAppGain.enabled")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(712),
+                pid: 3202,
+                bundleID: "com.apple.Music",
+                isRunningOutput: true
+            )
+        ])
+
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            backend: backend,
+            store: AppGainStore(userDefaults: defaults, key: "test.gain.store"),
+            defaults: defaults,
+            audioCaptureAccessState: .unknown,
+            perAppControlsState: .inactive
+        )
+
+        monitor.refresh()
+        monitor.setPerAppGainEnabled(true)
+
+        XCTAssertTrue(monitor.isPerAppGainEnabled)
+        XCTAssertEqual(backend.permissionProbeProcessIDs, [])
+        XCTAssertEqual(monitor.audioCaptureAccessState, .unknown)
+        XCTAssertEqual(monitor.perAppControlsState, .inactive)
+    }
+
+    func testToggleMuteDoesNotRequestAudioCaptureAccessWhenControlsAreInactive() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "audio.perAppGain.enabled")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(717),
+                pid: 3207,
+                bundleID: "com.apple.Music",
+                isRunningOutput: true
+            )
+        ])
+
+        let muteBackend = RecordingMuteBackend()
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            muteBackend: muteBackend,
+            backend: backend,
+            store: AppGainStore(userDefaults: defaults, key: "test.gain.store"),
+            defaults: defaults,
+            audioCaptureAccessState: .unknown,
+            perAppControlsState: .inactive
+        )
+
+        monitor.refresh()
+        monitor.toggleMute(sessionID: "bundle:com.apple.Music")
+
+        XCTAssertEqual(backend.permissionProbeProcessIDs, [])
+        XCTAssertEqual(monitor.audioCaptureAccessState, .unknown)
+        XCTAssertEqual(monitor.perAppControlsState, .inactive)
+        XCTAssertEqual(monitor.sessions.first?.isMuted, true)
+        XCTAssertEqual(muteBackend.mutedProcessIDs.last, AudioObjectID(717))
+    }
+
+    func testSetAllMutedDoesNotRequestAudioCaptureAccessWhenControlsAreInactive() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "audio.perAppGain.enabled")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(718),
+                pid: 3208,
+                bundleID: "com.apple.Music",
+                isRunningOutput: true
+            ),
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(719),
+                pid: 3209,
+                bundleID: "com.spotify.client",
+                isRunningOutput: true
+            )
+        ])
+
+        let muteBackend = RecordingMuteBackend()
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            muteBackend: muteBackend,
+            backend: backend,
+            store: AppGainStore(userDefaults: defaults, key: "test.gain.store"),
+            defaults: defaults,
+            audioCaptureAccessState: .unknown,
+            perAppControlsState: .inactive
+        )
+
+        monitor.refresh()
+        monitor.setAllMuted(true)
+
+        XCTAssertEqual(backend.permissionProbeProcessIDs, [])
+        XCTAssertEqual(monitor.audioCaptureAccessState, .unknown)
+        XCTAssertEqual(monitor.perAppControlsState, .inactive)
+        XCTAssertTrue(monitor.sessions.allSatisfy(\.isMuted))
+        XCTAssertEqual(Set(muteBackend.mutedProcessIDs), Set([AudioObjectID(718), AudioObjectID(719)]))
+    }
+
+    func testToggleMuteDoesNotChangeAppGainActivationStateWhenControlsAreInactive() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "audio.perAppGain.enabled")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(720),
+                pid: 3210,
+                bundleID: "com.apple.Music",
+                isRunningOutput: true
+            )
+        ])
+
+        let muteBackend = RecordingMuteBackend()
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            muteBackend: muteBackend,
+            backend: backend,
+            store: AppGainStore(userDefaults: defaults, key: "test.gain.store"),
+            defaults: defaults,
+            audioCaptureAccessState: .unknown,
+            perAppControlsState: .inactive
+        )
+
+        monitor.refresh()
+        monitor.toggleMute(sessionID: "bundle:com.apple.Music")
+
+        XCTAssertEqual(monitor.audioCaptureAccessState, .unknown)
+        XCTAssertEqual(monitor.perAppControlsState, .inactive)
+        XCTAssertEqual(monitor.sessions.first?.isMuted, true)
+        XCTAssertNil(monitor.errorMessage)
+        XCTAssertEqual(muteBackend.mutedProcessIDs.last, AudioObjectID(720))
+    }
+
+    func testRequestPerAppControlsActivationRequestsAudioCaptureAccessForActiveSession() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "audio.perAppGain.enabled")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(713),
+                pid: 3203,
+                bundleID: "com.apple.Music",
+                isRunningOutput: true
+            )
+        ])
+
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            backend: backend,
+            store: AppGainStore(userDefaults: defaults, key: "test.gain.store"),
+            defaults: defaults,
+            audioCaptureAccessState: .unknown,
+            perAppControlsState: .inactive
+        )
+
+        monitor.refresh()
+        monitor.requestPerAppControlsActivation()
+
+        XCTAssertEqual(backend.permissionProbeProcessIDs, [AudioObjectID(713)])
+        XCTAssertEqual(monitor.audioCaptureAccessState, .granted)
+        XCTAssertEqual(monitor.perAppControlsState, .active)
+        XCTAssertNil(monitor.errorMessage)
+    }
+
+    func testRequestPerAppControlsActivationAppliesStoredGainWhenAppGainIsEnabled() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: "audio.perAppGain.enabled")
+        let store = AppGainStore(userDefaults: defaults, key: "test.gain.store")
+        store.setGain(0.32, for: "com.apple.Music")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(716),
+                pid: 3206,
+                bundleID: "com.apple.Music",
+                isRunningOutput: true
+            )
+        ])
+
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            backend: backend,
+            store: store,
+            defaults: defaults,
+            audioCaptureAccessState: .unknown,
+            perAppControlsState: .inactive
+        )
+
+        monitor.refresh()
+        monitor.requestPerAppControlsActivation()
+
+        XCTAssertEqual(monitor.audioCaptureAccessState, .granted)
+        XCTAssertEqual(monitor.perAppControlsState, .active)
+        XCTAssertEqual(monitor.sessions.first?.appGain ?? 0, 0.32, accuracy: 0.0001)
+        XCTAssertEqual(backend.permissionProbeProcessIDs, [AudioObjectID(716)])
+        XCTAssertEqual(backend.applyCalls.last?.gain ?? 0, 0.32, accuracy: 0.0001)
+    }
+
+    func testRequestPerAppControlsActivationKeepsPermissionDeniedStateWhenProbeFails() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "audio.perAppGain.enabled")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(714),
+                pid: 3204,
+                bundleID: "com.apple.Music",
+                isRunningOutput: true
+            )
+        ])
+
+        let backend = PermissionFailingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            backend: backend,
+            store: AppGainStore(userDefaults: defaults, key: "test.gain.store"),
+            defaults: defaults,
+            audioCaptureAccessState: .unknown,
+            perAppControlsState: .inactive
+        )
+
+        monitor.refresh()
+        monitor.requestPerAppControlsActivation()
+
+        XCTAssertEqual(monitor.audioCaptureAccessState, .denied)
+        XCTAssertEqual(monitor.perAppControlsState, .inactive)
+        XCTAssertNil(monitor.errorMessage)
+    }
+
+    func testRefreshWithPersistedGainDoesNotApplyWhenPerAppControlsAreInactive() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: "audio.perAppGain.enabled")
+        let store = AppGainStore(userDefaults: defaults, key: "test.gain.store")
+        store.setGain(0.4, for: "com.apple.Music")
+
+        let snapshots = StubSnapshotProvider([
+            AudioProcessSnapshot(
+                processObjectID: AudioObjectID(715),
+                pid: 3205,
+                bundleID: "com.apple.Music",
+                isRunningOutput: true
+            )
+        ])
+
+        let backend = RecordingProcessControlBackend()
+        let monitor = makeMonitor(
+            snapshotProvider: snapshots,
+            backend: backend,
+            store: store,
+            defaults: defaults,
+            audioCaptureAccessState: .unknown,
+            perAppControlsState: .inactive
+        )
+
+        monitor.refresh()
+
+        XCTAssertEqual(monitor.sessions.first?.appGain ?? 0, 0.4, accuracy: 0.0001)
+        XCTAssertEqual(backend.applyCalls, [])
+        XCTAssertEqual(backend.permissionProbeProcessIDs, [])
     }
 
     func testTapPCMScalerAttenuatesFloat32SamplesProgressively() {
@@ -294,8 +661,29 @@ final class AudioProcessMonitorGainTests: XCTestCase {
 
     private func makeMonitor(
         snapshotProvider: StubSnapshotProvider,
+        muteBackend: any AudioMuteBackend = RecordingMuteBackend(),
         backend: any AudioProcessControlBackend,
         store: AppGainStore
+    ) -> AudioProcessMonitor {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: "audio.perAppGain.enabled")
+        return makeMonitor(
+            snapshotProvider: snapshotProvider,
+            muteBackend: muteBackend,
+            backend: backend,
+            store: store,
+            defaults: defaults
+        )
+    }
+
+    private func makeMonitor(
+        snapshotProvider: StubSnapshotProvider,
+        muteBackend: any AudioMuteBackend = RecordingMuteBackend(),
+        backend: any AudioProcessControlBackend,
+        store: AppGainStore,
+        defaults: UserDefaults,
+        audioCaptureAccessState: AudioCaptureAccessState = .granted,
+        perAppControlsState: PerAppControlsState = .active
     ) -> AudioProcessMonitor {
         let volumeController = StubOutputVolumeController(
             state: AudioOutputVolumeState(
@@ -307,9 +695,13 @@ final class AudioProcessMonitorGainTests: XCTestCase {
 
         return AudioProcessMonitor(
             snapshotProvider: snapshotProvider,
+            muteBackend: muteBackend,
             processControlBackend: backend,
             outputVolumeController: volumeController,
             appGainStore: store,
+            userDefaults: defaults,
+            audioCaptureAccessState: audioCaptureAccessState,
+            perAppControlsState: perAppControlsState,
             pollInterval: .seconds(5)
         )
     }
@@ -327,6 +719,10 @@ private final class PermissionFailingProcessControlBackend: AudioProcessControlB
         if muted || gain < 0.999 {
             throw AudioMonitorError.audioCapturePermissionRequired
         }
+    }
+
+    func requestAudioCaptureAccess(processObjectID: AudioObjectID) throws {
+        throw AudioMonitorError.audioCapturePermissionRequired
     }
 
     func remove(processObjectID: AudioObjectID) throws {}

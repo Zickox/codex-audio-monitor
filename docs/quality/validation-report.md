@@ -1,5 +1,33 @@
 # Validation Report
 
+## Patch cycle: 2026-03-06 (America/Santiago)
+
+- Scope: Fix regression where `Mute/Unmute` could trigger audio-capture permission prompt.
+- Decision applied:
+  - `Mute/Unmute` now uses `kAudioHardwarePropertyProcessIsAudible` (PID-qualified) in app process.
+  - App Gain remains isolated behind helper/XPC and explicit activation flow in `Settings`.
+  - App main `Info.plist` remains without `NSAudioCaptureUsageDescription`; helper keeps it.
+
+### XcodeBuildMCP bootstrap
+
+- `session-show-defaults` ✅
+- `doctor(enabled: true)` ✅
+- `discover_projs` ✅
+- `list_schemes` ✅ (`CodexAudioMonitorApp`, `CodexAudioGainService`)
+- `session-set-defaults` ✅
+- `show_build_settings` ✅
+
+### Build/test gates (fallback CLI)
+
+- `xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -configuration Debug -destination 'platform=macOS' build` ✅
+- `xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -configuration Debug -destination 'platform=macOS' test` ✅
+  - 42 tests executed, 3 skipped (live opt-in), 0 failures.
+- `xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -configuration Release -destination 'platform=macOS' build` ✅
+
+### Runtime note
+
+The active MCP wrapper in this session does not expose dedicated `build_macos/test_macos` calls in the current tool surface; `xcodebuild` fallback was used per runbook policy.
+
 ## Context
 
 - Date: 2026-03-05 (America/Santiago)

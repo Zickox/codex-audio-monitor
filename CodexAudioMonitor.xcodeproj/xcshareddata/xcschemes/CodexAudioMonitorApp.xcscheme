@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "253985F5F3A6A96FB003C770"
+               BlueprintIdentifier = "D887B648B093ED22FA7293CC"
                BuildableName = "CodexAudioMonitor.app"
                BlueprintName = "CodexAudioMonitorApp"
                ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
@@ -28,7 +28,7 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "8053F77C3AC536FE44BD61A4"
+               BlueprintIdentifier = "975694C936477B7BF2EA6821"
                BuildableName = "CodexAudioMonitorTests.xctest"
                BlueprintName = "CodexAudioMonitorTests"
                ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
@@ -44,7 +44,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "253985F5F3A6A96FB003C770"
+            BlueprintIdentifier = "D887B648B093ED22FA7293CC"
             BuildableName = "CodexAudioMonitor.app"
             BlueprintName = "CodexAudioMonitorApp"
             ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
@@ -67,7 +67,7 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "8053F77C3AC536FE44BD61A4"
+               BlueprintIdentifier = "975694C936477B7BF2EA6821"
                BuildableName = "CodexAudioMonitorTests.xctest"
                BlueprintName = "CodexAudioMonitorTests"
                ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
@@ -89,7 +89,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "253985F5F3A6A96FB003C770"
+            BlueprintIdentifier = "D887B648B093ED22FA7293CC"
             BuildableName = "CodexAudioMonitor.app"
             BlueprintName = "CodexAudioMonitorApp"
             ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">
@@ -106,7 +106,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "253985F5F3A6A96FB003C770"
+            BlueprintIdentifier = "D887B648B093ED22FA7293CC"
             BuildableName = "CodexAudioMonitor.app"
             BlueprintName = "CodexAudioMonitorApp"
             ReferencedContainer = "container:CodexAudioMonitor.xcodeproj">

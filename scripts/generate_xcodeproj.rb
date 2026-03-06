@@ -11,6 +11,7 @@ PROJECT_PATH = ROOT.join('CodexAudioMonitor.xcodeproj')
 APP_TARGET_NAME = 'CodexAudioMonitorApp'
 APP_PRODUCT_NAME = 'CodexAudioMonitor'
 TEST_TARGET_NAME = 'CodexAudioMonitorTests'
+GAIN_SERVICE_TARGET_NAME = 'CodexAudioGainService'
 
 APP_GLOB_PATTERNS = [
   'Sources/CodexAudioMonitor/App/**/*.swift',
@@ -22,6 +23,11 @@ APP_GLOB_PATTERNS = [
 
 TEST_GLOB_PATTERNS = [
   'Tests/CodexAudioMonitorTests/**/*.swift'
+].freeze
+
+GAIN_SERVICE_GLOB_PATTERNS = [
+  'Sources/CodexAudioGainService/**/*.swift',
+  'Sources/CodexAudioMonitor/Core/Audio/AppGainXPCProtocol.swift'
 ].freeze
 
 def collect_files(patterns)
@@ -86,6 +92,30 @@ app_target.build_configurations.each do |config|
 end
 
 add_sources(project, app_target, collect_files(APP_GLOB_PATTERNS))
+
+gain_service_target = project.new_target(:xpc_service, GAIN_SERVICE_TARGET_NAME, :osx, '15.0')
+gain_service_target.build_configurations.each do |config|
+  config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.zickox.codexaudiomonitor.gainservice'
+  config.build_settings['SWIFT_VERSION'] = '6.0'
+  config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '15.0'
+  config.build_settings['GENERATE_INFOPLIST_FILE'] = 'NO'
+  config.build_settings['INFOPLIST_FILE'] = 'Sources/CodexAudioGainService/Info.plist'
+  config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
+  config.build_settings['CURRENT_PROJECT_VERSION'] = '1'
+  config.build_settings['MARKETING_VERSION'] = '0.2.0'
+  config.build_settings['SKIP_INSTALL'] = 'YES'
+end
+
+add_sources(project, gain_service_target, collect_files(GAIN_SERVICE_GLOB_PATTERNS))
+
+app_target.add_dependency(gain_service_target)
+embed_xpc_phase = app_target.copy_files_build_phases.find { |phase| phase.name == 'Embed XPC Services' }
+embed_xpc_phase ||= app_target.new_copy_files_build_phase('Embed XPC Services')
+embed_xpc_phase.dst_subfolder_spec = '1'
+embed_xpc_phase.dst_path = 'Contents/XPCServices'
+build_file = embed_xpc_phase.files.find { |file| file.file_ref == gain_service_target.product_reference }
+build_file ||= embed_xpc_phase.add_file_reference(gain_service_target.product_reference, true)
+build_file.settings = { 'ATTRIBUTES' => ['CodeSignOnCopy', 'RemoveHeadersOnCopy'] }
 
 test_target = project.new_target(:unit_test_bundle, TEST_TARGET_NAME, :osx, '15.0')
 test_target.add_dependency(app_target)
