@@ -95,6 +95,41 @@ final class StubOutputVolumeController: AudioOutputVolumeControlling {
     }
 }
 
+struct StubAudioCaptureAccessAuthorizer: AudioCaptureAccessAuthorizing {
+    var preflightResult: Bool = true
+    var requestResult: Bool = true
+
+    func preflightScreenAndSystemAudioCaptureAccess() -> Bool {
+        preflightResult
+    }
+
+    func requestScreenAndSystemAudioCaptureAccess() -> Bool {
+        requestResult
+    }
+}
+
+final class RecordingAudioCaptureAccessAuthorizer: AudioCaptureAccessAuthorizing {
+    var preflightResult: Bool
+    var requestResult: Bool
+    private(set) var preflightCallCount = 0
+    private(set) var requestCallCount = 0
+
+    init(preflightResult: Bool, requestResult: Bool) {
+        self.preflightResult = preflightResult
+        self.requestResult = requestResult
+    }
+
+    func preflightScreenAndSystemAudioCaptureAccess() -> Bool {
+        preflightCallCount += 1
+        return preflightResult
+    }
+
+    func requestScreenAndSystemAudioCaptureAccess() -> Bool {
+        requestCallCount += 1
+        return requestResult
+    }
+}
+
 actor FakeCodexIntegrationService: CodexIntegrationService {
     var authStateValue: CodexAuthState = .loggedIn(provider: "OAuth")
     var connectivityReportValue: CodexConnectivityReport = CodexConnectivityReport(

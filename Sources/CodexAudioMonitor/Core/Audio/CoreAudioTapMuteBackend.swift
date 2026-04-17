@@ -2,28 +2,85 @@ import CoreAudio
 import Foundation
 
 final class CoreAudioTapMuteBackend: AudioMuteBackend {
-    private var mutedPIDByProcessObjectID: [AudioObjectID: pid_t] = [:]
+    private struct ActiveMuteHandle {
+        let tapID: AudioObjectID
+        let aggregateDeviceID: AudioObjectID
+        let ioProcID: AudioDeviceIOProcID
+    }
+
+    private static let tapIOProc: AudioDeviceIOProc = { _, _, _, _, _, _, _ in
+        noErr
+    }
+
+    private var handlesByProcessObjectID: [AudioObjectID: ActiveMuteHandle] = [:]
 
     func mute(processObjectID: AudioObjectID) throws {
-        if mutedPIDByProcessObjectID[processObjectID] != nil {
+        guard handlesByProcessObjectID[processObjectID] == nil else {
             return
         }
 
-        let pid = try resolvePID(for: processObjectID)
-        try setAudible(false, pid: pid)
-        mutedPIDByProcessObjectID[processObjectID] = pid
+        guard #available(macOS 14.2, *) else {
+            throw AudioMonitorError.unsupportedOS
+        }
+
+        let tapDescription = CATapDescription(stereoMixdownOfProcesses: [processObjectID])
+        tapDescription.name = "CodexAudioMonitorMute-\(processObjectID)"
+        tapDescription.muteBehavior = .muted
+        tapDescription.isPrivate = true
+
+        var tapID: AudioObjectID = 0
+        let status = AudioHardwareCreateProcessTap(tapDescription, &tapID)
+        guard status == noErr else {
+            throw AudioMonitorError.coreAudio(status)
+        }
+
+        do {
+            let handle = try makeActiveHandle(processObjectID: processObjectID, tapID: tapID)
+            handlesByProcessObjectID[processObjectID] = handle
+        } catch {
+            _ = AudioHardwareDestroyProcessTap(tapID)
+            throw error
+        }
     }
 
     func unmute(processObjectID: AudioObjectID) throws {
-        guard let pid = mutedPIDByProcessObjectID.removeValue(forKey: processObjectID) else {
+        guard let handle = handlesByProcessObjectID.removeValue(forKey: processObjectID) else {
             return
         }
 
-        try setAudible(true, pid: pid)
+        guard #available(macOS 14.2, *) else {
+            throw AudioMonitorError.unsupportedOS
+        }
+
+        var firstError: OSStatus?
+
+        let stopStatus = AudioDeviceStop(handle.aggregateDeviceID, handle.ioProcID)
+        if stopStatus != noErr && stopStatus != kAudioHardwareNotRunningError {
+            firstError = stopStatus
+        }
+
+        let destroyIOProcStatus = AudioDeviceDestroyIOProcID(handle.aggregateDeviceID, handle.ioProcID)
+        if destroyIOProcStatus != noErr && firstError == nil {
+            firstError = destroyIOProcStatus
+        }
+
+        let destroyAggregateStatus = AudioHardwareDestroyAggregateDevice(handle.aggregateDeviceID)
+        if destroyAggregateStatus != noErr && firstError == nil {
+            firstError = destroyAggregateStatus
+        }
+
+        let destroyTapStatus = AudioHardwareDestroyProcessTap(handle.tapID)
+        if destroyTapStatus != noErr && firstError == nil {
+            firstError = destroyTapStatus
+        }
+
+        if let firstError {
+            throw AudioMonitorError.coreAudio(firstError)
+        }
     }
 
     func cleanup() {
-        for processObjectID in Array(mutedPIDByProcessObjectID.keys) {
+        for processObjectID in Array(handlesByProcessObjectID.keys) {
             try? unmute(processObjectID: processObjectID)
         }
     }
@@ -32,50 +89,72 @@ final class CoreAudioTapMuteBackend: AudioMuteBackend {
         cleanup()
     }
 
-    private func resolvePID(for processObjectID: AudioObjectID) throws -> pid_t {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioProcessPropertyPID,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var pid: pid_t = 0
-        var size = UInt32(MemoryLayout<pid_t>.size)
-        let status = AudioObjectGetPropertyData(
-            processObjectID,
-            &address,
-            0,
-            nil,
-            &size,
-            &pid
-        )
+    private func makeActiveHandle(processObjectID: AudioObjectID, tapID: AudioObjectID) throws -> ActiveMuteHandle {
+        let tapUID = try getTapUID(for: tapID)
+        let aggregateUID = "com.codexaudiomonitor.mute.\(processObjectID).\(UUID().uuidString)"
+        let aggregateName = "CodexAudioMonitorMute-\(processObjectID)"
+        let tapList: [[String: Any]] = [
+            [
+                kAudioSubTapUIDKey: tapUID,
+                kAudioSubTapDriftCompensationKey: true
+            ]
+        ]
+
+        let aggregateDescription: [String: Any] = [
+            kAudioAggregateDeviceNameKey: aggregateName,
+            kAudioAggregateDeviceUIDKey: aggregateUID,
+            kAudioAggregateDeviceTapListKey: tapList,
+            kAudioAggregateDeviceTapAutoStartKey: true,
+            kAudioAggregateDeviceIsPrivateKey: true
+        ]
+
+        var aggregateDeviceID: AudioObjectID = 0
+        var status = AudioHardwareCreateAggregateDevice(aggregateDescription as CFDictionary, &aggregateDeviceID)
         guard status == noErr else {
             throw AudioMonitorError.coreAudio(status)
         }
-        return pid
+
+        var ioProcID: AudioDeviceIOProcID?
+        status = AudioDeviceCreateIOProcID(aggregateDeviceID, Self.tapIOProc, nil, &ioProcID)
+        guard status == noErr, let ioProcID else {
+            _ = AudioHardwareDestroyAggregateDevice(aggregateDeviceID)
+            throw AudioMonitorError.coreAudio(status)
+        }
+
+        status = AudioDeviceStart(aggregateDeviceID, ioProcID)
+        guard status == noErr else {
+            _ = AudioDeviceDestroyIOProcID(aggregateDeviceID, ioProcID)
+            _ = AudioHardwareDestroyAggregateDevice(aggregateDeviceID)
+            throw AudioMonitorError.coreAudio(status)
+        }
+
+        return ActiveMuteHandle(tapID: tapID, aggregateDeviceID: aggregateDeviceID, ioProcID: ioProcID)
     }
 
-    private func setAudible(_ isAudible: Bool, pid: pid_t) throws {
-        let systemObjectID = AudioObjectID(kAudioObjectSystemObject)
+    private func getTapUID(for tapID: AudioObjectID) throws -> String {
         var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyProcessIsAudible,
+            mSelector: kAudioTapPropertyUID,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        var pidQualifier = pid
-        var value: UInt32 = isAudible ? 1 : 0
-        let status = withUnsafePointer(to: &pidQualifier) { qualifier in
-            AudioObjectSetPropertyData(
-                systemObjectID,
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = withUnsafeMutablePointer(to: &value) { pointer in
+            AudioObjectGetPropertyData(
+                tapID,
                 &address,
-                UInt32(MemoryLayout<pid_t>.size),
-                qualifier,
-                UInt32(MemoryLayout<UInt32>.size),
-                &value
+                0,
+                nil,
+                &size,
+                pointer
             )
         }
-        guard status == noErr else {
+
+        guard status == noErr, let value else {
             throw AudioMonitorError.coreAudio(status)
         }
+
+        return value.takeRetainedValue() as String
     }
 }
 

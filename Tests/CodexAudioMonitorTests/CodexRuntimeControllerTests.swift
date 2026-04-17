@@ -52,7 +52,7 @@ final class CodexRuntimeControllerTests: XCTestCase {
         XCTAssertTrue(response.localizedCaseInsensitiveContains("hola"))
     }
 
-    func testHandleChatCommandAppliesSessionGainAction() async {
+    func testHandleChatCommandDoesNotApplySessionGainWhenDisabled() async {
         let service = FakeCodexIntegrationService()
         await service.setAuthState(.loggedIn(provider: "OAuth"))
         await service.setPlan(
@@ -79,9 +79,9 @@ final class CodexRuntimeControllerTests: XCTestCase {
 
         XCTAssertNotNil(spotify)
         if let spotify {
-            XCTAssertEqual(spotify.appGain, 0.3, accuracy: 0.001)
+            XCTAssertEqual(spotify.appGain, 1, accuracy: 0.001)
         }
-        XCTAssertTrue(response.contains("Ajusté"))
+        XCTAssertTrue(response.contains("App Gain controls are disabled"))
     }
 
     func testHandleChatCommandReturnsGuidanceWhenAppGainControlsAreInactive() async {
@@ -178,8 +178,9 @@ final class CodexRuntimeControllerTests: XCTestCase {
     }
 
     private func makeMonitor(
-        audioCaptureAccessState: AudioCaptureAccessState = .granted,
-        perAppControlsState: PerAppControlsState = .active
+        audioCaptureAccessState: AudioCaptureAccessState = .unknown,
+        perAppControlsState: PerAppControlsState = .inactive,
+        perAppGainEnabled: Bool = false
     ) -> AudioProcessMonitor {
         let snapshotProvider = StubSnapshotProvider([
             AudioProcessSnapshot(
@@ -206,7 +207,7 @@ final class CodexRuntimeControllerTests: XCTestCase {
             )
         )
         let defaults = UserDefaults(suiteName: "CodexRuntimeControllerTests.\(UUID().uuidString)")!
-        defaults.set(true, forKey: "audio.perAppGain.enabled")
+        defaults.set(perAppGainEnabled, forKey: "audio.perAppGain.enabled")
         let appGainStore = AppGainStore(
             userDefaults: defaults,
             key: "CodexRuntimeControllerTests.appGainStore"

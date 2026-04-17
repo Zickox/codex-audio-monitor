@@ -20,8 +20,8 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSMinimumSystemVersion</key>
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
-    <key>NSAudioCaptureUsageDescription</key>
-    <string>Codex Audio Monitor necesita capturar audio del sistema para aplicar App Gain por aplicacion.</string>
+	    <key>NSAudioCaptureUsageDescription</key>
+	    <string>Codex Audio Monitor necesita permiso para grabar el audio del sistema y permitirte ajustar el volumen de cada app por separado.</string>
     <key>XPCService</key>
     <dict>
         <key>ServiceType</key>

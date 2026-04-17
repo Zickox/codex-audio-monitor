@@ -1,20 +1,24 @@
 import CoreAudio
 import Foundation
+import OSLog
 
 final class CodexAudioGainService: NSObject, CodexAudioGainServiceProtocol {
     private let backend = CoreAudioTapProcessControlBackend()
+    private let logger = Logger(subsystem: "com.zickox.codexaudiomonitor", category: "AppGainService")
 
     func health(withReply reply: @escaping (Bool, String) -> Void) {
         reply(true, "ok")
     }
 
     func requestPermission(processObjectID: UInt32, withReply reply: @escaping (Int32, Int32, String?) -> Void) {
+        logger.notice("requestPermission processObjectID=\(processObjectID, privacy: .public)")
         handle(reply: reply) {
             try backend.requestAudioCaptureAccess(processObjectID: processObjectID)
         }
     }
 
     func apply(processObjectID: UInt32, gain: Float, withReply reply: @escaping (Int32, Int32, String?) -> Void) {
+        logger.debug("apply processObjectID=\(processObjectID, privacy: .public) gain=\(gain, privacy: .public)")
         handle(reply: reply) {
             try backend.apply(processObjectID: processObjectID, gain: gain)
         }
@@ -39,18 +43,24 @@ final class CodexAudioGainService: NSObject, CodexAudioGainServiceProtocol {
         do {
             try operation()
             reply(CodexAudioGainServiceResultCode.success, noErr, nil)
+            logger.debug("operation success")
         } catch let error as GainBackendError {
             switch error {
             case .audioCapturePermissionRequired:
+                logger.error("operation failed: permission required")
                 reply(CodexAudioGainServiceResultCode.permissionRequired, kAudioDevicePermissionsError, nil)
             case .appGainUnavailable:
+                logger.error("operation failed: app gain unavailable")
                 reply(CodexAudioGainServiceResultCode.appGainUnavailable, noErr, nil)
             case .unsupportedOS:
+                logger.error("operation failed: unsupported OS")
                 reply(CodexAudioGainServiceResultCode.unsupportedOS, noErr, nil)
             case let .coreAudio(status):
+                logger.error("operation failed: core audio status=\(status, privacy: .public)")
                 reply(CodexAudioGainServiceResultCode.coreAudio, status, nil)
             }
         } catch {
+            logger.error("operation failed: unknown error \(error.localizedDescription, privacy: .public)")
             reply(CodexAudioGainServiceResultCode.unknown, noErr, String(describing: error))
         }
     }
@@ -284,10 +294,18 @@ final class CoreAudioTapProcessControlBackend {
         }
 
         try ensureAudioCaptureUsageDescriptionPresent()
-        let tapID = try createTap(processObjectID: processObjectID)
-        let destroyTapStatus = AudioHardwareDestroyProcessTap(tapID)
-        guard destroyTapStatus == noErr else {
-            throw mapStatus(destroyTapStatus)
+        if handlesByProcessObjectID[processObjectID] != nil {
+            return
+        }
+
+        // Force the exact path used by real App Gain (gain < 1), which validates
+        // both permission and sample format support in one deterministic probe.
+        do {
+            try apply(processObjectID: processObjectID, gain: 0.95)
+            try remove(processObjectID: processObjectID)
+        } catch {
+            try? remove(processObjectID: processObjectID)
+            throw error
         }
     }
 

@@ -1,9 +1,11 @@
 import CoreAudio
 import Foundation
+import OSLog
 
 final class AppGainServiceClient: AudioProcessControlBackend {
     private let serviceName: String
     private var connection: NSXPCConnection?
+    private let logger = Logger(subsystem: "com.zickox.codexaudiomonitor", category: "AppGainClient")
 
     init(serviceName: String = "com.zickox.codexaudiomonitor.gainservice") {
         self.serviceName = serviceName
@@ -12,32 +14,36 @@ final class AppGainServiceClient: AudioProcessControlBackend {
     func apply(processObjectID: AudioObjectID, muted: Bool, gain: Float) throws {
         // App Gain path never mutes in this architecture; mute is handled by CoreAudioTapMuteBackend.
         _ = muted
-        let response = try invoke { proxy, reply in
+        let response = try invoke(method: "apply") { proxy, reply in
             proxy.apply(
                 processObjectID: processObjectID,
                 gain: gain,
                 withReply: reply
             )
         }
+        logger.debug("apply response resultCode=\(response.resultCode, privacy: .public) status=\(response.coreAudioStatus, privacy: .public)")
         try mapResponse(response)
     }
 
     func requestAudioCaptureAccess(processObjectID: AudioObjectID) throws {
-        let response = try invoke { proxy, reply in
+        logger.notice("requestAudioCaptureAccess processObjectID=\(processObjectID, privacy: .public)")
+        let response = try invoke(method: "requestPermission") { proxy, reply in
             proxy.requestPermission(processObjectID: processObjectID, withReply: reply)
         }
+        logger.notice("requestPermission response resultCode=\(response.resultCode, privacy: .public) status=\(response.coreAudioStatus, privacy: .public)")
         try mapResponse(response)
     }
 
     func remove(processObjectID: AudioObjectID) throws {
-        let response = try invoke { proxy, reply in
+        let response = try invoke(method: "remove") { proxy, reply in
             proxy.remove(processObjectID: processObjectID, withReply: reply)
         }
+        logger.debug("remove response resultCode=\(response.resultCode, privacy: .public) status=\(response.coreAudioStatus, privacy: .public)")
         try mapResponse(response)
     }
 
     func cleanup() {
-        _ = try? invoke { proxy, reply in
+        _ = try? invoke(method: "cleanup") { proxy, reply in
             proxy.cleanup(withReply: reply)
         }
         invalidateConnection()
@@ -46,6 +52,7 @@ final class AppGainServiceClient: AudioProcessControlBackend {
     private typealias Response = (resultCode: Int32, coreAudioStatus: Int32, message: String?)
 
     private func invoke(
+        method: String,
         _ call: (
             _ proxy: CodexAudioGainServiceProtocol,
             _ reply: @escaping (Int32, Int32, String?) -> Void
@@ -66,11 +73,13 @@ final class AppGainServiceClient: AudioProcessControlBackend {
         }
 
         if let transportError {
+            logger.error("XPC \(method, privacy: .public) transport error: \(transportError.localizedDescription, privacy: .public)")
             invalidateConnection()
             throw transportError
         }
 
         guard let response else {
+            logger.error("XPC \(method, privacy: .public) missing response")
             throw AudioMonitorError.appGainUnavailable
         }
 

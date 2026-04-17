@@ -19,6 +19,16 @@ xcodebuild -project CodexAudioMonitor.xcodeproj -scheme CodexAudioMonitorApp -de
 ./run-menubar.sh
 ```
 
+## Distribution
+
+For real macOS distribution, build a signed/notarized release DMG instead of using the Xcode debug build:
+
+```bash
+./scripts/release-macos.sh --team-id YOUR_TEAM_ID
+```
+
+See [macOS distribution](docs/macos-distribution.md) for the full flow.
+
 ## Test
 
 ```bash
@@ -52,6 +62,7 @@ The chat tab also includes a built-in diagnostic panel (`Check connection`) that
 - [XcodeBuildMCP runbook](docs/quality/xcodebuildmcp-runbook.md)
 - [Validation report](docs/quality/validation-report.md)
 - [OSS publication checklist](docs/oss/publication-checklist.md)
+- [macOS distribution](docs/macos-distribution.md)
 
 ## Open-source policy
 

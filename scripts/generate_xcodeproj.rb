@@ -21,6 +21,10 @@ APP_GLOB_PATTERNS = [
   'Sources/CodexAudioMonitor/Core/Codex/**/*.swift'
 ].freeze
 
+APP_RESOURCE_GLOB_PATTERNS = [
+  'Sources/CodexAudioMonitor/App/**/*.xcassets'
+].freeze
+
 TEST_GLOB_PATTERNS = [
   'Tests/CodexAudioMonitorTests/**/*.swift'
 ].freeze
@@ -71,6 +75,26 @@ def add_sources(project, target, relative_paths)
   end
 end
 
+def add_resources(project, target, relative_paths)
+  file_refs = {}
+
+  relative_paths.each do |relative_path|
+    directory = File.dirname(relative_path)
+    basename = File.basename(relative_path)
+    group = ensure_group(project.main_group, directory)
+
+    ref = file_refs[relative_path]
+    unless ref
+      ref = group.files.find { |file| file.path == basename }
+      ref ||= group.new_file(basename)
+      file_refs[relative_path] = ref
+    end
+
+    already_added = target.resources_build_phase.files_references.any? { |existing| existing.path == ref.path && existing.real_path.to_s == ref.real_path.to_s }
+    target.resources_build_phase.add_file_reference(ref, true) unless already_added
+  end
+end
+
 FileUtils.rm_rf(PROJECT_PATH)
 project = Xcodeproj::Project.new(PROJECT_PATH.to_s)
 project.root_object.attributes['LastSwiftUpdateCheck'] = '2600'
@@ -88,10 +112,15 @@ app_target.build_configurations.each do |config|
   config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
   config.build_settings['CURRENT_PROJECT_VERSION'] = '1'
   config.build_settings['MARKETING_VERSION'] = '0.2.0'
+  config.build_settings['ENABLE_HARDENED_RUNTIME'] = 'YES'
   config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'YES'
+  config.build_settings['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'AppIcon'
+  config.build_settings['ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME'] = 'AccentColor'
+  config.build_settings['COMBINE_HIDPI_IMAGES'] = 'YES'
 end
 
 add_sources(project, app_target, collect_files(APP_GLOB_PATTERNS))
+add_resources(project, app_target, collect_files(APP_RESOURCE_GLOB_PATTERNS))
 
 gain_service_target = project.new_target(:xpc_service, GAIN_SERVICE_TARGET_NAME, :osx, '15.0')
 gain_service_target.build_configurations.each do |config|
@@ -103,6 +132,7 @@ gain_service_target.build_configurations.each do |config|
   config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
   config.build_settings['CURRENT_PROJECT_VERSION'] = '1'
   config.build_settings['MARKETING_VERSION'] = '0.2.0'
+  config.build_settings['ENABLE_HARDENED_RUNTIME'] = 'YES'
   config.build_settings['SKIP_INSTALL'] = 'YES'
 end
 

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0866582B4CB28AB3B75BC815 /* CoreAudioOutputVolumeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B13819548E15DCA71B26E030 /* CoreAudioOutputVolumeController.swift */; };
 		0E7B8FDA28D2257998D2FFFF /* AudioProcessMonitorGainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BDFE2E90636CDC79DF2FB45 /* AudioProcessMonitorGainTests.swift */; };
+		10B53A09C4F04CC39DE6A8B1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 10B53A08C4F04CC39DE6A8B1 /* Assets.xcassets */; };
 		1B36142128D1BDAF0EF85C26 /* CodexLoginRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AA0CD8807F1D7417F652D44 /* CodexLoginRunner.swift */; };
 		22B35AE61BB0962B2900E5A5 /* AppGainServiceClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF780262AF815587A53AD22D /* AppGainServiceClient.swift */; };
 		2AD3D4676DD2B5B66223B81F /* CodexOAuthCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB24D992F192CB2602F97077 /* CodexOAuthCredentials.swift */; };
@@ -90,12 +91,13 @@
 		0831E0D0995083897A3A5E54 /* AudioMuteBackend.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AudioMuteBackend.swift; sourceTree = "<group>"; };
 		0C45CAA671A4D4674396DF4F /* AudioProcessMonitor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AudioProcessMonitor.swift; sourceTree = "<group>"; };
 		0D753C3E58A455559B0AA752 /* CodexAudioMonitorApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexAudioMonitorApp.swift; sourceTree = "<group>"; };
+		10B53A08C4F04CC39DE6A8B1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1418B960416753D6136FECCF /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		143122FFDD6444497D09C3C2 /* CodexCLIIntegrationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexCLIIntegrationService.swift; sourceTree = "<group>"; };
 		1A4F005AC01995D9DB0B0ADF /* AudioLevelAnimationView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AudioLevelAnimationView.swift; sourceTree = "<group>"; };
 		1E049C4FB350962E8F3DAA7D /* CodexRuntimeController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexRuntimeController.swift; sourceTree = "<group>"; };
 		20967AD71B6F3306311F49F0 /* CodexCommandExecutor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexCommandExecutor.swift; sourceTree = "<group>"; };
-		26B83C45543504FDE4DF1BF3 /* CodexAudioGainService */ = {isa = PBXFileReference; includeInIndex = 0; path = CodexAudioGainService; sourceTree = BUILT_PRODUCTS_DIR; };
+		26B83C45543504FDE4DF1BF3 /* CodexAudioGainService */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.xpc-service"; name = CodexAudioGainService; path = CodexAudioGainService.xpc; sourceTree = BUILT_PRODUCTS_DIR; };
 		3AA0CD8807F1D7417F652D44 /* CodexLoginRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexLoginRunner.swift; sourceTree = "<group>"; };
 		3DE722F861B5246C0D16BED9 /* CodexActionPlan.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexActionPlan.swift; sourceTree = "<group>"; };
 		442E52EF2D602E7158F79414 /* AudioMenuView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AudioMenuView.swift; sourceTree = "<group>"; };
@@ -106,7 +108,7 @@
 		531A5BFD8A49A81CC99715CF /* AppGainStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppGainStoreTests.swift; sourceTree = "<group>"; };
 		54AB56908D59302D7762796A /* main.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		662311E513AF335147E22644 /* SessionRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionRowView.swift; sourceTree = "<group>"; };
-		6BB0C15605754C0B3D79FD4C /* CodexAudioMonitorApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodexAudioMonitorApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6BB0C15605754C0B3D79FD4C /* CodexAudioMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CodexAudioMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6D8C04BAB24BC19FB6AAB8F6 /* CodexConnectivityLiveTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CodexConnectivityLiveTests.swift; sourceTree = "<group>"; };
 		76A5143BEEEB5D577AC17CD4 /* AudioMonitorError.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AudioMonitorError.swift; sourceTree = "<group>"; };
 		81C4C2CE76F41AC5EB121B20 /* AppGainStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppGainStore.swift; sourceTree = "<group>"; };
@@ -168,7 +170,6 @@
 				4DF4E96FF86154D22DCF90AD /* CodexAudioGainService.swift */,
 				54AB56908D59302D7762796A /* main.swift */,
 			);
-			name = CodexAudioGainService;
 			path = CodexAudioGainService;
 			sourceTree = "<group>";
 		};
@@ -178,7 +179,6 @@
 				35E805C785C95A7EBC9D6A3E /* Audio */,
 				513640A687AEC7704FAE97B4 /* Codex */,
 			);
-			name = Core;
 			path = Core;
 			sourceTree = "<group>";
 		};
@@ -195,9 +195,9 @@
 		2B60191C0E1E0E4F0DF336CE /* App */ = {
 			isa = PBXGroup;
 			children = (
+				10B53A08C4F04CC39DE6A8B1 /* Assets.xcassets */,
 				0D753C3E58A455559B0AA752 /* CodexAudioMonitorApp.swift */,
 			);
-			name = App;
 			path = App;
 			sourceTree = "<group>";
 		};
@@ -217,7 +217,6 @@
 				8F188F80FEF9CAC0EDE058C1 /* CoreAudioProcessSnapshotProvider.swift */,
 				48E4A1856C22933332BB2B02 /* CoreAudioTapMuteBackend.swift */,
 			);
-			name = Audio;
 			path = Audio;
 			sourceTree = "<group>";
 		};
@@ -236,7 +235,6 @@
 				FB24D992F192CB2602F97077 /* CodexOAuthCredentials.swift */,
 				1E049C4FB350962E8F3DAA7D /* CodexRuntimeController.swift */,
 			);
-			name = Codex;
 			path = Codex;
 			sourceTree = "<group>";
 		};
@@ -246,7 +244,6 @@
 				DEC729618F63F04E7FBCEC48 /* DesignTokens.swift */,
 				E05B6E29301C63EC9029D942 /* GlassStylingStrategy.swift */,
 			);
-			name = DesignSystem;
 			path = DesignSystem;
 			sourceTree = "<group>";
 		};
@@ -260,14 +257,13 @@
 				1418B960416753D6136FECCF /* SettingsView.swift */,
 				C18000CECC947096BE0B4906 /* StatusChipView.swift */,
 			);
-			name = MenuBar;
 			path = MenuBar;
 			sourceTree = "<group>";
 		};
 		666FEC8EE2EA3BD451DF6E6F /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				6BB0C15605754C0B3D79FD4C /* CodexAudioMonitorApp.app */,
+				6BB0C15605754C0B3D79FD4C /* CodexAudioMonitor.app */,
 				26B83C45543504FDE4DF1BF3 /* CodexAudioGainService */,
 				A3AF546776EF655B6E6C9F45 /* CodexAudioMonitorTests.xctest */,
 			);
@@ -288,7 +284,6 @@
 				EBEAD57AB78BFBC3E8692724 /* CodexAudioMonitor */,
 				03C4D008A96E69BCEE80008A /* CodexAudioGainService */,
 			);
-			name = Sources;
 			path = Sources;
 			sourceTree = "<group>";
 		};
@@ -305,7 +300,6 @@
 			children = (
 				8418D6480894B4DB1BA95B98 /* CodexTestDoubles.swift */,
 			);
-			name = TestDoubles;
 			path = TestDoubles;
 			sourceTree = "<group>";
 		};
@@ -317,7 +311,6 @@
 				FCCCDAB03BC65C9180DE0ACD /* Infrastructure */,
 				F9BF46FDB5755D959DC67FDD /* UI */,
 			);
-			name = CodexAudioMonitor;
 			path = CodexAudioMonitor;
 			sourceTree = "<group>";
 		};
@@ -331,7 +324,6 @@
 				C503631EA1285F4F20857F77 /* CodexRuntimeControllerTests.swift */,
 				EB03AA10D28904639A96D83A /* TestDoubles */,
 			);
-			name = CodexAudioMonitorTests;
 			path = CodexAudioMonitorTests;
 			sourceTree = "<group>";
 		};
@@ -341,7 +333,6 @@
 				5C833B7F6490DC325313AB83 /* DesignSystem */,
 				5D504107CF745F3B3F1ADDA0 /* MenuBar */,
 			);
-			name = UI;
 			path = UI;
 			sourceTree = "<group>";
 		};
@@ -350,7 +341,6 @@
 			children = (
 				4885F526A487E081EC5DDE33 /* ProcessRunner.swift */,
 			);
-			name = Infrastructure;
 			path = Infrastructure;
 			sourceTree = "<group>";
 		};
@@ -359,7 +349,6 @@
 			children = (
 				F3E18C6FE2070FAE714FAF02 /* CodexAudioMonitorTests */,
 			);
-			name = Tests;
 			path = Tests;
 			sourceTree = "<group>";
 		};
@@ -400,7 +389,7 @@
 			);
 			name = CodexAudioMonitorApp;
 			productName = CodexAudioMonitorApp;
-			productReference = 6BB0C15605754C0B3D79FD4C /* CodexAudioMonitorApp.app */;
+			productReference = 6BB0C15605754C0B3D79FD4C /* CodexAudioMonitor.app */;
 			productType = "com.apple.product-type.application";
 		};
 		EA0E811B66DCB4CC0C56B76D /* CodexAudioGainService */ = {
@@ -428,6 +417,18 @@
 			attributes = {
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					975694C936477B7BF2EA6821 = {
+						ProvisioningStyle = Automatic;
+					};
+					D887B648B093ED22FA7293CC = {
+						DevelopmentTeam = 2J5JQ97N3K;
+						ProvisioningStyle = Automatic;
+					};
+					EA0E811B66DCB4CC0C56B76D = {
+						ProvisioningStyle = Automatic;
+					};
+				};
 			};
 			buildConfigurationList = 37B841D5FF42644625A474AB /* Build configuration list for PBXProject "CodexAudioMonitor" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -461,6 +462,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				10B53A09C4F04CC39DE6A8B1 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -560,6 +562,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/CodexAudioGainService/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
@@ -633,8 +636,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -658,6 +660,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/CodexAudioGainService/Info.plist;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
@@ -677,6 +680,8 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2J5JQ97N3K;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/CodexAudioMonitor/App/Info.plist;
@@ -695,9 +700,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2J5JQ97N3K;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Sources/CodexAudioMonitor/App/Info.plist;
